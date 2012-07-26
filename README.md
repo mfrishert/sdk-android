@@ -15,6 +15,7 @@ Table of Contents
     * [Notification Badges](#displaying-a-notification-badge)
     * [Unlocking Rewards](#unlocking-rewards)
     * [Handling Virtual Goods Purchases](#handling-virtual-goods-purchases)
+    * [Using Connection Targeting](#using-connection-targeting)
 * [Callbacks](#callbacks)
     * [PHPublisherOpenRequest delegate](#phpublisheropenrequest-delegates)
     * [PHPublisherContentRequest delegates](#phpublishercontentrequest-delegates)
@@ -177,6 +178,19 @@ Again, you should have a reference to the `puchase` object from `shouldMakePurch
 You're done!
 
 __Potential Pitfall: The `.reportResolution(...)` call must happen before sending the `PHPublisherIAPTrackingRequest`__
+
+
+## Using Connection Targeting
+
+In order to use connection targeting, you need to include the `ACCESS_NETWORK_STATE` permission in your `AndroidManifest.xml` file. This permission is required in order to access network state.
+
+```xml
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+<activity android:name="com.playhaven.src.publishersdk.content.PHContentView" android:theme="@android:style/Theme.Dialog"></activity>
+```
 
 -------------
 ## Callbacks
