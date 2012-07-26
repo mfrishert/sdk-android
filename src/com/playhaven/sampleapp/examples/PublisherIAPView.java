@@ -32,7 +32,6 @@ public class PublisherIAPView extends ExampleView implements PHAPIRequest.Delega
 		request.send();
 	}
 
-	
 	/////////////////////////////////////////////////////////
 	///////////////////// Delegate Methods //////////////////
 	public void requestSucceeded(PHAPIRequest request, JSONObject responseData) {

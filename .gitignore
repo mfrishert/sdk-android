@@ -1,0 +1,34 @@
+#Git ignore file so that we can use both a mercurial repo and a git repo.
+
+#android specific ignore
+bin
+
+#we do want the jar files however
+!*.jar
+!*.sh
+
+lint.xml
+proguard-project.txt
+
+gen
+
+tmp
+
+local.properties
+
+demo-sdks
+
+#mac os x files
+.DS_Store
+
+# NO BIN BECAUSE BIN IS BAD SINCE ITS BAD
+tests/ui/bin
+
+encode/output
+
+# for the unit tests
+tests/ui/bin
+#mercurial files
+.hg
+.hgignore
+

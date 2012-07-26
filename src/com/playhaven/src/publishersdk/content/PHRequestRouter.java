@@ -24,19 +24,21 @@ public class PHRequestRouter {
 	
 	public static String getCurrentURL() {
 		synchronized (PHRequestRouter.class) {
-			return (mCurUrl != null 				? 
-					mCurUrl.toString(): 
+			return (mCurUrl != null 	? 
+					mCurUrl.toString()  : 
 					null);
 		}
 	}
 	
 	public static String getCurrentQueryVar(String name) {
 		synchronized (PHRequestRouter.class) {
+			if (mCurUrl == null) return null;
 			
+			String param = mCurUrl.getQueryParameter(name);
 			
-			return (mCurUrl != null 				? 
-					mCurUrl.getQueryParameter(name) : 
-					null);
+			if (param == null || param.equals("")) return null;
+			
+			return param;
 		}
 	}
 	
@@ -50,6 +52,7 @@ public class PHRequestRouter {
 				 				 url.length())
 							);
 	}
+	
 	public boolean hasRoute(String url) {
 		return mRoutes.containsKey(stripQuery(url));
 	}
@@ -71,6 +74,10 @@ public class PHRequestRouter {
 			if (route != null) route.run();
 		}
 
+	}
+	
+	public static void clearCurrentURL() {
+		mCurUrl = null;
 	}
 	
 	public void clearRoutes() {

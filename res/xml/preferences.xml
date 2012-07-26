@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+	<PreferenceCategory
+	    android:title="Authentication">
+	    <EditTextPreference
+	        android:name="Token Preference"
+	        android:summary="The token you received from Playhaven Dashboard"
+	        android:title="Token"
+	        android:key="tokenPref"
+	        android:defaultValue=""
+	        />
+	    
+	    <EditTextPreference
+	        android:name="Secret Key Preference"
+	        android:summary="The secret key you received from the Playhaven Dashbaord"
+	        android:key="secretPref"
+	        android:title="Secret"
+	        android:defaultValue=""
+	      	/>
+	    
+	    <EditTextPreference
+	        android:name="API Server Preference"
+	        android:summary="The address of the API server we'll use"
+	        android:key="apiServerPref"
+	        android:title="API Endpoint"
+	        android:defaultValue="http://api2.playhaven.com"
+	      	/>
+	</PreferenceCategory>    
+</PreferenceScreen>

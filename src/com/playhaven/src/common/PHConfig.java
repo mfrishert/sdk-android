@@ -1,31 +1,37 @@
 package com.playhaven.src.common;
 
 import java.lang.reflect.Field;
-import java.util.HashMap;
 import java.util.Iterator;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import android.provider.Settings.System;
 import android.content.Context;
 import android.content.pm.PackageInfo;
 import android.content.res.Configuration;
 import android.graphics.Rect;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
+import android.net.NetworkInfo.State;
 import android.os.Build;
+import android.provider.Settings.System;
 import android.util.DisplayMetrics;
 
-/** Lightweight class for managing configuration details of the SDK. 
+/** 
+ * Lightweight class for managing configuration details of the SDK. 
  * You should call {@link PHConfig#cacheDeviceInfo} to cache information about the device from a given context. 
  * We do *not* want to hold onto the context as this creates all sorts of leaks and null-pointer badness.
  * To ensure the content is up-to-date, you should call this before
- * every content request. We avoid getters and setters to keep things lightweight. */
+ * every content request. We avoid getters and setters to keep things lightweight. 
+ * 
+ * Note: We refactored the version out so the build scripts could update it without influencing the rest of the application.
+ * */
 public class PHConfig {
 	/////////////////////////////////////////////
 	///////// Configuration Variables ///////////
 	/// (Try not to set default values here) ////
 	
-	public static String sdk_version = "";
+	public static String sdk_version = PHSDKVersion.getCurrentVersion(); 
 	
 	public static String token		 = "";
 	
@@ -51,6 +57,8 @@ public class PHConfig {
 	
 	public static int 	 device_size;
 	
+	public static ConnectionType connection;	
+	
 	public static Rect 	 screen_size           = new Rect(0, 0, 0, 0);
 	
 	public static Rect	 available_screen_size = new Rect(0, 0, 0, 0);
@@ -63,7 +71,21 @@ public class PHConfig {
 	
 	public static boolean cache;
 	
-	public static int	  cache_size = 1024 * 1024 * 8;
+	public static int	  precache_size = 1024 * 1024 * 8;
+	
+	public static boolean precache 			   = false;
+	
+	public static boolean runningTests		   = false;
+	
+	
+	public static enum ConnectionType {
+	    NO_NETWORK,
+	    MOBILE,
+	    WIFI,
+	    NO_PERMISSION;
+	}
+	
+	
 	
 	/** Caches the live device info but anything in JSON_CONFIG
 	 * overrides it.
@@ -74,7 +96,7 @@ public class PHConfig {
 		
 		try {
 			// set all values from context
-			PackageInfo pinfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+			PackageInfo pinfo 	= context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
 			
 			app_package 		= pinfo.packageName;
 			
@@ -98,6 +120,11 @@ public class PHConfig {
 			
 			device_model 		= Build.MODEL;
 			
+			// updated by build scripts
+			sdk_version 		= PHSDKVersion.getCurrentVersion();
+			
+			connection          = PHConnectionManager.getConnectionType(context);
+
 		} catch (Exception e) {
 			PHCrashReport.reportCrash(e, PHCrashReport.Urgency.low);
 		}
@@ -111,9 +138,8 @@ public class PHConfig {
 	public static final String JSON_CONFIG = 
 						"{\n" + 
 						"   \"prod\":{\n" + 
-						"      \"sdk_version\":\"1.10.3\",\n" + 
 						"      \"api\":\"http://api2.playhaven.com\",\n" + 
-						"      \"cache\":false,\n" + 
+						"      \"precache\":false,\n" + 
 						"      \"protocol\":4,\n" + 
 						"      \"urgency_level\":\"low\"\n" + 
 						"   },\n" + 
@@ -144,7 +170,7 @@ public class PHConfig {
  				String key = null;
  				Iterator keys = config.keys();
  				
- 				// try to set public variable to json values
+ 				// try to set public variable to json values (using reflection)
  				while (keys.hasNext()) {
  					key = (String)keys.next();
  					

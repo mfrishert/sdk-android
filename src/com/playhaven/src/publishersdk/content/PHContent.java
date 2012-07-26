@@ -28,6 +28,7 @@ public class PHContent implements Parcelable {
 	};
 
 	public TransitionType transition = TransitionType.Modal;
+	
 	public String closeURL;
 
 	public JSONObject context;
@@ -92,7 +93,7 @@ public class PHContent implements Parcelable {
 	 * what parameters it can from the JSON dictionary. Clients who use
 	 * PHContent should always check that it contains their minimum required
 	 * set of parameters because it often won't.
-	 * @param the 'response' JSON dictionary..
+	 * @param The server's response (JSON)
 	 */
 	public void fromJSON(JSONObject dict) {
 		try {
@@ -123,7 +124,7 @@ public class PHContent implements Parcelable {
 				
 				
 				if (transition != null) {
-					if (transition.equals("PH_MODEL"))
+					if (transition.equals("PH_MODAL"))
 						this.transition = TransitionType.Modal;
 					else if (transition.equals("PH_DIALOG"))
 						this.transition = TransitionType.Dialog;
@@ -175,7 +176,7 @@ public class PHContent implements Parcelable {
 				y = (float)dict.optDouble("y");
 				w = (float)dict.optDouble("w");
 				h = (float)dict.optDouble("h");
-				return new RectF(x,y,x+w,y+h);
+				return new RectF(x, y, x + w, y + h);
 			}
 
 		}

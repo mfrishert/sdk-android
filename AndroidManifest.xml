@@ -6,9 +6,9 @@
     <uses-sdk android:minSdkVersion="8" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
    	<uses-permission android:name="android.permission.INTERNET" />
+	<uses-permission android:name="com.android.vending.BILLING" />
 	
-    <application android:icon="@drawable/icon" android:label="@string/app_name"
-    android:debuggable="true">
+    <application android:icon="@drawable/icon" android:label="@string/app_name">
         
         <activity android:name="com.playhaven.sampleapp.SampleApp"
                   android:label="@string/app_name">
@@ -18,8 +18,19 @@
             </intent-filter>
         </activity>
         <activity android:name="com.playhaven.sampleapp.examples.PublisherOpenView"></activity>
+        <activity android:name="com.playhaven.sampleapp.SamplePreferences"></activity>
         <activity android:name="com.playhaven.sampleapp.examples.PublisherContentView"></activity>
         <activity android:name="com.playhaven.sampleapp.examples.PublisherIAPView"></activity>
 		<activity android:name="com.playhaven.src.publishersdk.content.PHContentView" android:theme="@android:style/Theme.Dialog"></activity>
+		
+		<service android:name="com.playhaven.sampleapp.billing.BillingService" />
+		
+		<receiver android:name="com.playhaven.sampleapp.billing.BillingReceiver">
+		    <intent-filter>
+		        <action android:name="com.android.vending.billing.IN_APP_NOTIFY" />
+		    	<action android:name="com.android.vending.billing.RESPONSE_CODE" />
+		    	<action android:name="com.android.vending.billing.PURCHASE_STATE_CHANGED" />
+		    </intent-filter>
+		</receiver>
     </application>
 </manifest>

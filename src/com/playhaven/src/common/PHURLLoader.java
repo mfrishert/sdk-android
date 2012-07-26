@@ -22,6 +22,9 @@ import com.playhaven.src.utils.PHStringUtil;
  *  Thus, use this class when you're expecting to open a device url. Otherwise use {@link PHAsyncRequest}.
  *  
  *  TODO: perhaps examine maximum_redirects and total_redirects? 
+ *  
+ *  TODO: some enterprising young chap should refactor the context out and instead callback into the main PHContentView
+ *  via a delegate.
  */
 public class PHURLLoader implements PHAsyncRequest.Delegate {
 	
@@ -33,7 +36,7 @@ public class PHURLLoader implements PHAsyncRequest.Delegate {
 	
 	public boolean openFinalURL;
 	
-	public PHURLLoaderDelegate delegate;
+	public Delegate delegate;
 	
 	private PHAsyncRequest conn;
 		
@@ -46,13 +49,13 @@ public class PHURLLoader implements PHAsyncRequest.Delegate {
 	private String callback;
 	
 	private static LinkedHashSet<PHURLLoader> allLoaders = new LinkedHashSet<PHURLLoader>();
-	
-	public static interface PHURLLoaderDelegate {
+
+	public static interface Delegate {
 		public void loaderFinished(PHURLLoader loader);
 		public void loaderFailed(PHURLLoader loader);
 	}
 	
-	public PHURLLoader(Context context, PHURLLoaderDelegate delegate) {
+	public PHURLLoader(Context context, Delegate delegate) {
 		this(context); // call other constructor
 		
 		this.delegate = delegate;
@@ -88,7 +91,7 @@ public class PHURLLoader implements PHAsyncRequest.Delegate {
 	///////////////////////////////////////////////////////////
 	///////////////// Management Methods //////////////////////
 	
-	public static void invalidateLoaders(PHURLLoaderDelegate delegate) {
+	public static void invalidateLoaders(Delegate delegate) {
 		for (PHURLLoader loader : allLoaders) {
 			if (loader.delegate == delegate) {
 				loader.invalidate();
@@ -151,7 +154,7 @@ public class PHURLLoader implements PHAsyncRequest.Delegate {
 				
 				if (targetURL.startsWith("market:")) redirectMarketURL(targetURL); // I'll take a market please!
 				
-				else context.get().startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(targetURL))); // fine, just handle default!
+				else launchActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(targetURL))); // fine, just handle default!
 				
 			}
 				
@@ -162,6 +165,11 @@ public class PHURLLoader implements PHAsyncRequest.Delegate {
 		}
 	}
 	
+	private void launchActivity(Intent intent) {
+		if (PHConfig.runningTests) return; // never launch when UI testing...
+		
+		context.get().startActivity(intent);
+	}
 	public void redirectMarketURL(String url) {
 		if (context.get() == null)
 			return;
@@ -180,6 +188,8 @@ public class PHURLLoader implements PHAsyncRequest.Delegate {
 				intent, PackageManager.MATCH_DEFAULT_ONLY);
 
 		if (resolveInfo.size() == 0) {
+			PHStringUtil.log("Market app is not installed and market:// not supported!");
+			
 			// since no market:// just open in the web browser!
 			Uri uri = Uri.parse(
 								String.format(MARKET_URL_TEMPLATE,
@@ -189,7 +199,7 @@ public class PHURLLoader implements PHAsyncRequest.Delegate {
 			intent = new Intent(Intent.ACTION_VIEW, uri);
 		}
 
-		context.get().startActivity(intent);
+		launchActivity(intent);
 	}
 
 	public void invalidate() {

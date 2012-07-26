@@ -17,6 +17,9 @@ import java.util.Hashtable;
  * 
  * TODO: I'd like to transition the codebase towards googles naming conventions.
  * TODO: implement GZIP compression before sending to the server? How slow is it? We need benchmarks 
+ * TODO: We should always *save* the reports immediately then uplaod them at the next opportunity
+ * TODO: watch out for the infinite loop where PHAPIRequest crashes, we send a crash report (which of course
+ * extends PHAPIRequest), which crashes again, and so forth.
  */
 public class PHCrashReport extends PHAPIRequest {
 	
@@ -85,16 +88,31 @@ public class PHCrashReport extends PHAPIRequest {
 	/////////////////////////////////////////////////
 	//////////////// Convenience Creators ///////////
 	public static PHCrashReport reportCrash(Exception e, String tag, Urgency level) {
-		e.printStackTrace();
-		return new PHCrashReport(e, tag, level);
+		//TODO: in the future actually create a new PHCrashReport and then send/save the report!
+		
+		if (PHConfig.runningTests) {
+			throw new RuntimeException(e);
+		} else {
+			e.printStackTrace();			
+		}
+		
+		return null;
 	}
 	
 	public static PHCrashReport reportCrash(Exception e, Urgency level) {
-		e.printStackTrace();
-		return new PHCrashReport(e, level);
+		//TODO: in the future create a new PHCrashReport and actually send/save the report!
+		
+		if (PHConfig.runningTests) {
+			throw new RuntimeException(e);
+		} else {
+			e.printStackTrace();			
+		}
+		
+		return null;
 	}
 	
 	public PHCrashReport(PHAPIRequest.Delegate delegate) {
+		// TODO !!!!!!!! We cannot pass in a new context! Think of a better way!
 		super(null);
 		throw new UnsupportedOperationException("PHCrashReport does not accept a delegate");
 	}

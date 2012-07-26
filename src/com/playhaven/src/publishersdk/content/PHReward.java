@@ -7,7 +7,7 @@ import android.os.Parcelable;
 public class PHReward implements Parcelable {
 	public String name;
 	
-	public String quantity;
+	public int quantity;
 	
 	public String receipt;
 	
@@ -32,7 +32,7 @@ public class PHReward implements Parcelable {
 	
 	public PHReward(Parcel in) {
 		this.name = in.readString();
-		this.quantity = in.readString();
+		this.quantity = in.readInt();
 		this.receipt = in.readString();
 	}
 	
@@ -42,7 +42,7 @@ public class PHReward implements Parcelable {
 	
 	public void writeToParcel(Parcel out, int flags) {
 		out.writeString(name);
-		out.writeString(quantity);
+		out.writeInt(quantity);
 		out.writeString(receipt);
 	}
 }

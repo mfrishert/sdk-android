@@ -3,14 +3,22 @@ package com.playhaven.src.publishersdk.content;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import android.app.Activity;
 import android.content.Intent;
+import android.os.Bundle;
 import android.os.Parcel;
 import android.os.Parcelable;
 
-/** Simple container class to hold purchase meta data. It is parcelable so that we can pass between activities.*/
+/** Simple container for managing purchases. It can self-report the final result of the transaction
+ * via {@link reportResolution}.
+ * @author samstewart
+ *
+ */
 public class PHPurchase implements Parcelable {
 	
     public String product;
+    
+    public String contentview_intent;
     
     public String name;
     
@@ -20,6 +28,9 @@ public class PHPurchase implements Parcelable {
     
     public String callback;
 
+    public Resolution resolution;
+    
+    public static final String NO_CONTENTVIEW_INTENT = "com.playhaven.null";
     
     public enum Resolution {
     	
@@ -39,34 +50,34 @@ public class PHPurchase implements Parcelable {
     	
 	}
 	
+    /**
+     * Creates a new PHPurchase.
+     * @param contentview_intent An intent <em>filter</em> string this PHPurchase will <em>use</em> when broadcasting
+     * our final purchase result. This should be unique to the content view.
+     */
+	public PHPurchase(String contentview_intent) {
+		// our callback intent filter for talking with the PHContentView
+		this.contentview_intent = contentview_intent;
+	}
+	
 	public PHPurchase() {
-		//Default constructor
+		this.contentview_intent = NO_CONTENTVIEW_INTENT;
 	}
 
-	/**
-	 * @warning THIS IS CRAP! There is no clear encapsulation and it gives a dumb data object far too much power.
-	 * This needs to be refactored *out* of this class into some logic controller somewhere. God.
-	 * @param resolution
-	 */
-    public void reportResolution(Resolution resolution) {
-		JSONObject response = new JSONObject();
-		JSONObject callbackData = new JSONObject();
-
-		try {
-			response.put("resolution", resolution.getType());
-			callbackData.put("callback", this.callback);
-			callbackData.put("response", response.opt("response"));
-		} catch (JSONException e) {
-			e.printStackTrace();
-		}
-
-        Intent broadcastPurchaseResolution = new Intent();
-        broadcastPurchaseResolution.setAction(PHContentView.PHBroadcastReceiverKey.Action.getKey());
-        broadcastPurchaseResolution.addCategory(Intent.CATEGORY_DEFAULT);
-        broadcastPurchaseResolution.putExtra(PHContentView.PHBroadcastReceiverKey.Event.getKey(), PHContentView.PHBroadcastReceiverEvent.ContentViewsPurchaseSendCallback.getKey());
-        broadcastPurchaseResolution.putExtra(PHContentView.PHBroadcastReceiverEvent.PurchaseResolution.getKey(), callbackData.toString());
-        //TODO: will not be renabled until we figure out a better way of doing this! This is a dumb data object and should have no reference to it's parent..
-        //PHContentView.getContext().sendBroadcast(broadcastPurchaseResolution);
+	
+    public void reportResolution(Resolution resolution, Activity context) {
+    	this.resolution = resolution;
+    	
+		// notify the original content view that our purchase is complete
+    	// we use the contentview_intent string we were supplied by the content view
+		Intent didPurchase = new Intent(contentview_intent);
+		
+		Bundle metadata = new Bundle();
+		metadata.putParcelable(PHContentView.Detail.Purchase.getKey(), this);
+		
+		didPurchase.putExtra(PHContentView.BROADCAST_METADATA, metadata);
+		
+		context.sendBroadcast(didPurchase);
     }
 
     ////////////////////////////////////////////////////
@@ -85,11 +96,12 @@ public class PHPurchase implements Parcelable {
 	};
 	
 	public PHPurchase(Parcel in) {
-		this.product = in.readString();
-		this.name = in.readString();
-		this.quantity = in.readInt();
-		this.receipt = in.readString();
-		this.callback = in.readString();
+		this.product 			= in.readString();
+		this.name 				= in.readString();
+		this.quantity 			= in.readInt();
+		this.receipt 			= in.readString();
+		this.callback 			= in.readString();
+		this.contentview_intent = in.readString();
 	}
 	
 	public int describeContents() {
@@ -102,6 +114,7 @@ public class PHPurchase implements Parcelable {
 		out.writeInt(quantity);
 		out.writeString(receipt);
 		out.writeString(callback);
+		out.writeString(contentview_intent);
 	}
 }
 

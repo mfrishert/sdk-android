@@ -23,6 +23,7 @@ public class DetailAdapter<T extends DetailAdapter.DetailObject> extends ArrayAd
 		
 		public String getTitle();
 		public String getDetail();
+		public String getContentDescription();
 		public View getView();
 	}
 	
@@ -67,6 +68,10 @@ public class DetailAdapter<T extends DetailAdapter.DetailObject> extends ArrayAd
 			TextView detailTxt = holder.detailTxt;
 			LinearLayout detailLinearLayout = holder.detailLinearLayout;
 			
+			if (v != null) {
+				// set the acessibility description for UI automation testing
+				v.setContentDescription(detail.getContentDescription());
+			}
 			if(topTxt != null) {
 				String title = detail.getTitle();
 				if(title != null)

@@ -11,7 +11,6 @@ import java.util.Hashtable;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 
-import org.apache.http.Header;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpVersion;
@@ -19,10 +18,12 @@ import org.apache.http.NameValuePair;
 import org.apache.http.ProtocolException;
 import org.apache.http.client.entity.UrlEncodedFormEntity;
 import org.apache.http.client.methods.HttpGet;
+import org.apache.http.conn.scheme.SchemeRegistry;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpUriRequest;
 import org.apache.http.client.params.ClientPNames;
 import org.apache.http.client.params.HttpClientParams;
+import org.apache.http.conn.scheme.Scheme;
 import org.apache.http.impl.client.DefaultHttpClient;
 import org.apache.http.impl.client.DefaultRedirectHandler;
 import org.apache.http.message.BasicNameValuePair;
@@ -100,6 +101,8 @@ public class PHAsyncRequest extends AsyncTask<Uri, Integer, ByteBuffer> {
 		
 		private String password;
 		
+		private SchemeRegistry mSchemeReg = new SchemeRegistry();
+		
 		private int totalRedirects = 0;
 		
 		private ArrayList<String> redirectUrls = new ArrayList<String>();
@@ -113,14 +116,6 @@ public class PHAsyncRequest extends AsyncTask<Uri, Integer, ByteBuffer> {
 		 *
 		 */
 		private class PHRedirectHandler extends DefaultRedirectHandler {
-			@Override
-			public URI getLocationURI(HttpResponse response, HttpContext context) throws ProtocolException {
-				URI redirectURI = super.getLocationURI(response, context);
-				
-				addRedirectUrl(redirectURI.toString());
-				
-				return redirectURI; // return same url but we've added it to the list
-			}
 			@Override
 			public boolean isRedirectRequested(HttpResponse response, HttpContext context) {
 				return shouldRedirect(response);
@@ -157,32 +152,44 @@ public class PHAsyncRequest extends AsyncTask<Uri, Integer, ByteBuffer> {
 			redirectUrls.clear();
 		}
 		
-		/** gets the redirect location from response. If not redirect response, returns null.*/
-		public String getRedirectLocation(HttpResponse response) {
-			if(isRedirectResponse(response.getStatusLine().getStatusCode())) {
-				Header[] headers = response.getHeaders("Location");
-				
-				if(headers != null && headers.length != 0) {
-					return headers[0].getValue();
-				}
-			}
-			return null;
-		}
-		
 		/** Checks to see if status code is redirect request or not.*/
 		private boolean isRedirectResponse(int code) {
 			return (code >= 300 && code <= 307);
 		}
 		
 		/** 
-		 * Should we redirect or have we hit the maximum number of redirects?
+		 * Should we redirect or have we hit the maximum number of redirects.
+		 * We also track every single proposed URL redirect here. Not sure if this 
+		 * is a good idea but really the only place to do so because we'll
+		 * never visit urls with prefixes like market:// even though we need them
+		 * as redirects
 		 * @param response the http response from the server
 		 * @return true if we should redirect, false otherwise
 		 */
 		public boolean shouldRedirect(HttpResponse response) {
-			if(isRedirectResponse(response.getStatusLine().getStatusCode()))
+			if(isRedirectResponse(response.getStatusLine().getStatusCode())) {
+				// first check to make sure a valid scheme (avoid market:// urls)
+				if (response.getHeaders("Location").length == 0) return false; // not a redirect
+				
+				String redirectURL = response.getHeaders("Location")[0].getValue();
+				
+				if (redirectURL == null) return false;
+				
+				Uri uri = Uri.parse(redirectURL);
+				
+				if (uri == null) return false;
+				
+				// at least add to the redirects
+				addRedirectUrl(uri.toString());
+				
+				Scheme scheme = mSchemeReg.get(uri.getScheme());
+				
+				if (scheme == null) return false;
+				
+				// finally, do we even have enough redirects left?
 				return (++totalRedirects <= max_redirects);
-			
+			}
+				
 			// not a redirect response anyway..
 			return false;
 		}
@@ -341,8 +348,14 @@ public class PHAsyncRequest extends AsyncTask<Uri, Integer, ByteBuffer> {
 					// grab the response code
 					responseCode = response.getStatusLine().getStatusCode();
 					
+					// Note: if the response code is a redirect, we should clamp it to a 200
+					// since we often stop redirecting (such as when we find a market:// url).
+					// Hence, if we actually have a redirect url we're good
+					if (responseCode == 302 && getLastRedirectURL() != null)
+						responseCode = 200;
+					
 					// notify delegate with response code (-1 is the flag for response code)
-					publishProgress(-1);
+					publishProgress(responseCode);
 					
 					if (isCancelled()) return null;
 					
@@ -395,15 +408,10 @@ public class PHAsyncRequest extends AsyncTask<Uri, Integer, ByteBuffer> {
 		if(progress.length > 0) {
 			int prog = progress[0];
 			
-			// we handle either passing true progress update or just HTTP response code.
-			//TODO: this is somewhat strange, should be refactored to just pass in response code?
-			// or signal (-1) should be refactored into constant
-			if(prog == -1) {
-				// post response code
-				delegate.requestResponseCode(responseCode);
-			} else if(prog > 0) {
-				// TODO: handle progress update..
-			}
+			// post response code
+			if (delegate != null)
+				delegate.requestResponseCode(prog);
+			
 		}
 		
 	}

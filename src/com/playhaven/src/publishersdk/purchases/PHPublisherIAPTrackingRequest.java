@@ -38,7 +38,7 @@ public class PHPublisherIAPTrackingRequest extends PHAPIRequest {
 	/**
 	 * Publisher should set these values.
 	 */
-    public String product = ""; // make sure not null to avoid error
+    public String product = ""; // make sure not null to avoid errors
     
     public int quantity = 0;
     
@@ -56,6 +56,7 @@ public class PHPublisherIAPTrackingRequest extends PHAPIRequest {
     
     public PHPublisherIAPTrackingRequest(Context context) {
     	super(context);
+    	this.error = null;
     }
     
 	public PHPublisherIAPTrackingRequest(Context context, Delegate delegate) {
@@ -68,13 +69,17 @@ public class PHPublisherIAPTrackingRequest extends PHAPIRequest {
 		this.error = error;
 	}
 	
-	public PHPublisherIAPTrackingRequest(Context context,String product_id, int quantity, PHPurchase.Resolution resolution) {
+	public PHPublisherIAPTrackingRequest(Context context, PHPurchase purchase) {
+		this(context, purchase.product, purchase.quantity, purchase.resolution);
+	}
+	
+	public PHPublisherIAPTrackingRequest(Context context, String product_id, int quantity, PHPurchase.Resolution resolution) {
 		super(context);
 		
-		this.product = product_id;
-		this.quantity = quantity;
-		this.resolution = resolution;
-		this.error = null;
+		this.product 		= product_id;
+		this.quantity 		= quantity;
+		this.resolution 	= resolution;
+		this.error 			= null;
 	}
 	
 	
@@ -84,10 +89,10 @@ public class PHPublisherIAPTrackingRequest extends PHAPIRequest {
 	public static void setConversionCookie(String product, String cookie) {
 		if (JSONObject.NULL.equals(cookie) || cookie.length() == 0) return;
 		
-		cookies.put(cookie, product);
+		cookies.put(product, cookie);
 	}
 
-	public String getConversionCookie(String product) {
+	public static String getAndExpireCookie(String product) {
 		String cookie =  cookies.get(product);
 		cookies.remove(product); // use once and self destruct!
 		return cookie; 
@@ -105,7 +110,6 @@ public class PHPublisherIAPTrackingRequest extends PHAPIRequest {
 		// always refresh locale
 		currencyLocale = Currency.getInstance(Locale.getDefault()); // gotta love Java?
 		
-		// unfortunately, we have to ensure not-null for all values. Should we warn publishers?
 		Hashtable<String, String> purchaseData = new Hashtable<String, String>();
 		
 		purchaseData.put("product", (product != null ? product : ""));
@@ -119,7 +123,8 @@ public class PHPublisherIAPTrackingRequest extends PHAPIRequest {
 		purchaseData.put("price_locale", (currencyLocale != null ? currencyLocale.getCurrencyCode() : ""));
 		purchaseData.put("store", (store != null ? store.getOrigin() : null));
 		
-		String cookie = getConversionCookie(this.product);
+		// getting the cookie will expire it
+		String cookie = PHPublisherIAPTrackingRequest.getAndExpireCookie(this.product);
 		purchaseData.put("cookie", (cookie != null ? cookie : "")); // avoid a null value
 		
 		return purchaseData;

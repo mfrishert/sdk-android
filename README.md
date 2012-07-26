@@ -1,4 +1,4 @@
-PlayHaven Android SDK 1.10.3
+PlayHaven Android SDK 1.11.0
 ====================
 PlayHaven is a real-time mobile game marketing platform which helps you take control of the business of your games.
 
@@ -14,11 +14,12 @@ Table of Contents
     * [Showing Ads](#displaying-full-screen-ads)
     * [Notification Badges](#displaying-a-notification-badge)
     * [Unlocking Rewards](#unlocking-rewards)
+    * [Handling Virtual Goods Purchases](#handling-virtual-goods-purchases)
 * [Callbacks](#callbacks)
     * [PHPublisherOpenRequest delegate](#phpublisheropenrequest-delegates)
     * [PHPublisherContentRequest delegates](#phpublishercontentrequest-delegates)
 * [Tips n' Tricks](#tips-and-tricks)
-    * [didDismissContentWithin](https://github.com/playhaven/sdk-android-internal/tree/1.10.3-release#diddismisscontentwithintimerange)
+    * [didDismissContentWithin](#diddismisscontentwithintimerange)
 
 Installation
 ============
@@ -29,7 +30,7 @@ Integrating the Playhaven Android SDK is dead simple and should take no more tha
 
 ### JAR Integration
 
-1. Download the Playhaven SDK [here](http://playhaven-sdk-builds.s3.amazonaws.com/android/jars/playhaven-1.10.3.jar) and ensure you have the latest version of the [Android Developer Tools installed](http://developer.android.com/sdk/eclipse-adt.html#updating).
+1. Download the Playhaven SDK [here](http://playhaven-sdk-builds.s3.amazonaws.com/android/jars/playhaven-1.11.0.jar) and ensure you have the latest version of the [Android Developer Tools installed](http://developer.android.com/sdk/eclipse-adt.html#updating).
 
 2. Install the SDK into your project.
     1. If a __libs__ folder doesn't already exist, create one in your project root. Android will automatically recognize it.
@@ -125,6 +126,58 @@ The PHReward object has the following useful properties:
 * __name:__     The reward's name (specified in the dashboard)
 * __quantity:__ The reward's amount (specified in the dashboard) 
 
+
+## Handling Virtual Goods Purchases
+
+The Playhaven Android SDK supports "virtual good promotion" (or VGP) which allows you to advertise virtual products available *within* a game. For example, your puzzle game may offer additional levels or special "skins" for a nominal fee. 
+
+Playhaven offers full-screen content units which advertise virtual goods. When a user clicks an ad, the Playhaven Android SDK sends a "callback" to your game.
+
+__Note: You must configure your "in app purchase" items on the Playhaven Dashboard *after* creating them in your Android Market dashboard.__
+
+The Playhaven SDK *only* handles two elements of a user's complete transaction:
+
+1. Notifying your game when a user clicks "purchase" in an ad
+2. Tracking the IAP purchase
+
+**Note: The Playhaven Android SDK does not handle interaction with the Android Billing Service as implementation details vary by game. Please refer to the [Android Billing Guide](http://developer.android.com/guide/google/play/billing/index.html) for further information.**
+
+The first step notifies your game through the `PHPublisherContentRequest.PurchaseDelegate` interface. You must implement the interface's single method:
+
+```java
+public void shouldMakePurchase(PHPublisherContentRequest request, PHPurchase purchase) {
+    .... make purchase here .... 
+}
+```
+
+In this callback, you should complete the actual transaction through the Android Billing Service. You should also save a reference to the `PHPurchase` object for later use.
+
+
+The Playhaven Android SDK simply adds an intermediate step to the transaction process:
+<img src="http://i990.photobucket.com/albums/af25/flashpro/playhave_billing_diagram.png" style="padding: 5px; width: 500px; margin-bottom: 20px; margin-top: 20px" />
+
+
+Once the Android Billing Service has confirmed (or canceled) the user's purchase, you must call:
+
+```java
+purchase.reportResolution([purchase resolution], [your activity]);
+```
+
+on the `purchase` object passed into the *original* `shouldMakePurchase(...)` callback. Your reported resolution should correspond to the result of the Android Billing transaction (canceled, completed, failed, etc.) along with a valid `Context`.
+
+Finally, you must report the "in app purchase" transaction to the sever with a `PHPublisherIAPTrackingRequest`:
+
+```java
+PHPublisherIAPTrackingRequest trackingRequest = new PHPublisherIAPTrackingRequest([your context], purchase)
+trackingRequest.send();
+```
+
+Again, you should have a reference to the `puchase` object from `shouldMakePurchase(...)`.
+
+You're done!
+
+__Potential Pitfall: The `.reportResolution(...)` call must happen before sending the `PHPublisherIAPTrackingRequest`__
+
 -------------
 ## Callbacks
 
@@ -143,12 +196,13 @@ request.send();
 
 ### PHPublisherContentRequest delegates
 
-**Note:** There are several delegate *interfaces* for a `PHPublisherContentRequest`. You should implement the ones which provide relevant callbacks.
+**Note:** There are several delegate *interfaces* for a `PHPublisherContentRequest`. You should implement those which provide relevant callbacks.
 
 1. FailureDelegate
 2. CustomizeDelegate
 3. RewardDelegate
 4. ContentDelegate
+5. PurchaseDelegate
 
 When working with the multiple delegates in `PHPublisherContentRequest`:
 
@@ -158,12 +212,11 @@ request.content_delegate = [your customize delegate];
 request.customize_delegate = [your customize delegate];
 request.failure_delegate = [your failure delegate];
 request.reward_delegate = [your reward delegate];
-
+request.purchase_delegate = [your purchase delegate]
 request.send();
 ```
 
 * __failure of request:__ 
-
 ```java
 public void didFail(PHPublisherContentRequest request, String error) {
     ... your handling code here ...
@@ -171,7 +224,6 @@ public void didFail(PHPublisherContentRequest request, String error) {
 ```
 
 * __failure of actual ad:__
-
 ```java
 public void contentDidFail(PHPublisherContentRequest request, Exception e) {
     ... your handling code here ...
@@ -188,7 +240,14 @@ public Bitmap closeButton(PHPublisherContentRequest request, PHButtonState state
 * __customize the border color:__
 ```java
 public int borderColor(PHPublisherContentRequest request, PHContent content) {}
-    ... constant from the Color class ...
+    ... constant from Color ...
+}
+```
+
+* __clicked on a VGP ad:__
+```java
+public void shouldMakePurchase(PHPublisherContentRequest request, PHPurchase purchase) {}
+    ... make the purchase via the Android Billing Service ...
 }
 ```
 
@@ -196,6 +255,13 @@ public int borderColor(PHPublisherContentRequest request, PHContent content) {}
 ```java
 public void unlockedReward(PHPublisherContentRequest request, PHReward reward) {
     ... handle the reward in-game ...
+}
+```
+
+* __make a purchase after user clicks ad:__
+```java
+public void shouldMakePurchase(PHPublisherContentRequest request, PHPurchase purchase) {
+    ... make the real purchase through Android Billing ...
 }
 ```
 
@@ -231,14 +297,13 @@ public void didDismissContent(PHPublisherContentRequest request, PHDismissType t
 
 
 * __successful request callback:__ 
-
 ```java
 public void requestSucceeded(PHAPIRequest request, JSONObject responseData) {
     ... your handling code here ...
 }
 ```
-* __unsuccessful request callback:__
 
+* __unsuccessful request callback:__
 ```java
 public void requestFailed(PHAPIRequest request, Exception e) {
     ...your handling code here...

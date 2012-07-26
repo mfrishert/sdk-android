@@ -1,8 +1,11 @@
 package com.playhaven.src.publishersdk.content;
 
+import java.io.File;
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
+import java.util.Hashtable;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -37,6 +40,7 @@ import android.widget.ImageView;
 import android.widget.RelativeLayout;
 import android.widget.RelativeLayout.LayoutParams;
 
+import com.jakewharton.DiskLruCache;
 import com.playhaven.resources.PHResourceManager;
 import com.playhaven.resources.files.PHCloseActiveImageResource;
 import com.playhaven.resources.files.PHCloseImageResource;
@@ -48,8 +52,6 @@ import com.playhaven.src.publishersdk.content.PHPublisherContentRequest.PHDismis
 import com.playhaven.src.publishersdk.purchases.PHPublisherIAPTrackingRequest;
 import com.playhaven.src.utils.PHConversionUtils;
 import com.playhaven.src.utils.PHStringUtil;
-import com.samstewart.hadaly.Selector;
-import com.samstewart.hadaly.jstest.UITest;
 
 /**
  * A separate activity for actually displaying the content after the
@@ -59,15 +61,23 @@ import com.samstewart.hadaly.jstest.UITest;
  * @author samstewart
  * 
  */
-public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDelegate, 
+public class PHContentView extends Activity implements PHURLLoader.Delegate, 
 													   PHAPIRequest.Delegate {
 
+	public static final String BROADCAST_INTENT 		 = "com.playhaven.src.publishersdk.content.PHContentViewEvent";
+	
+	public static final String PURCHASE_CALLBACK_INTENT  = "com.playhaven.src.publishersdk.content.PHContentViewPurchaseCallback";
+	
+	public static final String BROADCAST_EVENT = "";
+	
+	public static final String BROADCAST_METADATA = "com.playhaven.md";
+	
 	private String tag;
 	
 	public PHContent content;
 
 	public boolean showsOverlayImmediately;
-
+	
 	private View overlayView;
 	
 	private RelativeLayout rootView;
@@ -78,103 +88,10 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 	
 	private boolean isTouchCancelable;
   
-    private final String JAVASCRIPT_CALLBACK_TEMPLATE 	  = "javascript:PlayHaven.nativeAPI.callback(\"%s\", %s, %s)";
+    private static final String JAVASCRIPT_CALLBACK_TEMPLATE 	  = "javascript:PlayHaven.nativeAPI.callback(\"%s\", %s, %s)";
 
-    private final String JAVASCRIPT_SET_PROTOCOL_TEMPLATE = "javascript:window.PlayHavenDispatchProtocolVersion = %d";
+    private static final String JAVASCRIPT_SET_PROTOCOL_TEMPLATE = "javascript:window.PlayHavenDispatchProtocolVersion = %d";
     
-	///////////////////////////////////////////////////////////////
-	//////////////////////// Broadcast Constants //////////////////
-	
-	// argument keys for starting PHContentView Activity
-	public static enum PHContentViewArgument {
-		CustomCloseBtn	("custom_close"),
-		Content			("init_content_contentview"),
-		Tag				("content_tag");
-		
-		private String key;
-		
-		public String getKey() {
-			return key;
-		}
-		
-		private PHContentViewArgument(String key) {
-			this.key = key;
-		}
-	}
-	
-	public static enum PHBroadcastEvent {
-		DidShow					("didShow"),
-		DidLoad					("didLoad"),
-		DidDismiss				("didDismiss"),
-		DidFail					("didFail"),
-		DidUnlockReward			("didUnlockReward"),
-		DidMakePurchase			("didMakePurchase"),
-		DidSendSubrequest		("didSendSubrequest");
-
-		private String key;
-		
-		public String getKey() {
-			return key;
-		}
-		
-		private PHBroadcastEvent(String key) {
-			this.key = key;
-		}
-	}
-
-	// general broadcast keys
-	public static enum PHBroadcastKey {
-		Action		("com.playhaven.src.publishersdk.content.PHContentViewEvent"),
-		Event		("event_contentview"),
-		CloseType	("closetype_contentview"),
-		Callback	("callback_contentview"),
-		Context		("context_contentview"),
-		Error		("error_contentview"),
-		Reward		("reward_contentview"),
-		Purchase	("purchase_contentview"),
-		Tag			("content_tag");
-		
-		private String key;
-		
-		public String getKey() {
-			return key;
-		}
-		
-		private PHBroadcastKey(String key) {
-			this.key = key;
-		}
-	}
-
-	public static enum PHBroadcastReceiverEvent {
-		ContentViewsPurchaseSendCallback	("contentViewsPurchaseSendCallback"),
-		PurchaseResolution					("purchaseResolution");
-
-		private String key;
-		
-		public String getKey() {
-			return key;
-		}
-		
-		private PHBroadcastReceiverEvent(String key) {
-			this.key = key;
-		}
-	}
-
-	public static enum PHBroadcastReceiverKey {
-		Action	("com.playhaven.src.publishersdk.content.PHContentViewReceiverEvent"),
-		Event	("event_report_purchase_resolution");
-		
-		private String key;
-		
-		public String getKey() {
-			return key;
-		}
-		
-		private PHBroadcastReceiverKey(String key) {
-			this.key = key;
-		}
-	}
-
 	private PHRequestRouter mRouter;
 	
 	// maximum margin for close button
@@ -187,8 +104,66 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 	private Runnable closeBtnDelayRunnable;
 
 	private ImageButton closeBtn;
+    
+	private BroadcastReceiver purchaseReceiver;
+	
+	///////////////////////////////////////////////////////////////
+	//////////////////////// Broadcast Constants //////////////////
+	
+	// argument keys for starting PHContentView Activity
+	public static enum IntentArgument {
+		CustomCloseBtn	("custom_close"),
+		Content			("init_content_contentview"),
+		Tag				("content_tag");
+		
+		private String key;
+		
+		public String getKey() {
+			return key;
+		}
+		
+		private IntentArgument(String key) {
+			this.key = key;
+		}
+	}
+	
+	public static enum Event {
+		DidShow,
+		DidLoad,
+		DidDismiss,
+		DidFail,
+		DidUnlockReward,
+		DidMakePurchase,
+		DidSendSubrequest,
+		DidReceiveDispatch,
+		DidLaunchURL;
+	}
+	
+	public static enum Detail {
+		Event		("event_contentview"),
+		CloseType	("closetype_contentview"),
+		Callback	("callback_contentview"),
+		Context		("context_contentview"),
+		Content 	("content_contentview"),
+		Error		("error_contentview"),
+		Reward		("reward_contentview"),
+		Purchase	("purchase_contentview"),
+		Tag			("content_tag"),
+		Dispatch 	("dispatch_contentview"),
+		LaunchURL   ("launchurl_contentview");
+		
+		private String key;
+		
+		public String getKey() {
+			return key;
+		}
+		
+		private Detail(String key) {
+			this.key = key;
+		}
+	}
 
-	public enum PHRewardKey {
+	public enum Reward {
 		IDKey			("reward"), 
 		QuantityKey		("quantity"), 
 		ReceiptKey		("receipt"), 
@@ -196,7 +171,7 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 
 		private final String keyName;
 
-		private PHRewardKey(String key) {
+		private Reward(String key) {
 			this.keyName = key; // one time assignment
 		}
 
@@ -205,7 +180,7 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 		}
 	};
 
-	public enum PHPurchaseKey {
+	public enum Purchase {
 		ProductIDKey	("product"),
 		NameKey			("name"),
 		QuantityKey		("quantity"),
@@ -215,7 +190,7 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 		
 		private final String keyName;
 		
-		private PHPurchaseKey(String key) {
+		private Purchase(String key) {
 			this.keyName = key; //one time assignment
 		}
 		
@@ -224,13 +199,13 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 		}
 	};
 
-	public static enum PHButtonState {
+	public static enum ButtonState {
 		Down(android.R.attr.state_pressed),
 		Up(android.R.attr.state_enabled);
 		
 		private int android_state;
 		
-		private PHButtonState(int android_state) {
+		private ButtonState(int android_state) {
 			this.android_state = android_state;
 		}
 		
@@ -246,15 +221,25 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 	 * Extends WebChromeClient just for logging purposes. (have to if greater
 	 * than Android 2.1)
 	 */
-	private class PHWebViewChrome extends WebChromeClient {
+	public class PHWebViewChrome extends WebChromeClient {
 		
 		@Override
 		public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
-			String fname = Uri.parse(consoleMessage.sourceId())
-					.getLastPathSegment();
-			PHStringUtil.log("Javascript: " + consoleMessage.message()
-					+ " at line (" + fname + ") :"
-					+ consoleMessage.lineNumber());
+			try {
+				String fname = "(no file)";
+				
+				if (consoleMessage.sourceId() != null) {
+					fname = Uri.parse(consoleMessage.sourceId()).getLastPathSegment();
+				}
+				
+				PHStringUtil.log("Javascript: " + consoleMessage.message()
+							   + " at line (" + fname + ") :"
+							   + consoleMessage.lineNumber());
+				
+			} catch (Exception e) { // swallow all exceptions
+				PHCrashReport.reportCrash(e, "PHWebViewChrome - onConsoleMessage", PHCrashReport.Urgency.low);
+			}
+			
 			return true;
 		}
 	}
@@ -268,13 +253,8 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 		@Override
 		public void onPageFinished(WebView webview, String url) {
 			try {
-			/*
-			 * TODO: make sure that we eventually call the callback Issue:
-			 * webview.loadUrl forks another page request if(delegate != null)
-			 * delegate.didLoad(PHContentView.this);
-			 */
-			if (delegate != null)
-				delegate.didLoad();
+		
+			broadcastEvent(Event.DidLoad, null);
 			
 			} catch (Exception e) { // swallow all exceptions
 				PHCrashReport.reportCrash(e, "PHWebViewClient - onPageFinished()", PHCrashReport.Urgency.critical);
@@ -298,24 +278,59 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 			 * routed through shouldOverrideUrlLoading because they were 'overridden'.
 			 */
 			
-			if (url.startsWith("ph://")) routePlayhavenCallback(url);
+			try {
+				if (url.startsWith("ph://")) routePlayhavenCallback(url);
+				
+			} catch (Exception e) { // swallow all exceptions
+				PHCrashReport.reportCrash(e, "PHWebViewClient - onLoadResource", PHCrashReport.Urgency.critical);
+			}
 		}
 		
 		@Override
 		public void onReceivedError(WebView view, int errorCode,
 				String description, String failingUrl) {
 			
-			// just blank out the webview
-			view.loadUrl("");
+			try {
+				// just blank out the webview
+				view.loadUrl("");
+				
+				PHCrashReport.reportCrash(new RuntimeException(description), "PHWebViewClient - onRecievedError", PHCrashReport.Urgency.low);
+				
+				PHStringUtil.log(String.format("Error loading template at url: %s Code: %d Description: %s", failingUrl, errorCode, description));
+				
+			} catch (Exception e) { // swallow all exceptions
+				PHCrashReport.reportCrash(e, "PHWebViewClient - onReceivedError", PHCrashReport.Urgency.low);
+			}
 			
-			PHCrashReport.reportCrash(new RuntimeException(description), "PHWebViewClient - onRecievedError", PHCrashReport.Urgency.low);
-			
-			PHStringUtil.log(String.format("Error loading template at url: %s Code: %d Description: %s", failingUrl, errorCode, description));
 		}
 		
 		@Override
 		public boolean shouldOverrideUrlLoading(WebView webview, String url) {
-			return routePlayhavenCallback(url);
+			try {
+				boolean shouldOverride = routePlayhavenCallback(url);
+				
+				if ( ! shouldOverride && PHConfig.precache) shouldOverride = loadPrecachedIfExists(url);
+				
+				return shouldOverride;
+			} catch (Exception e) { // swallow all exceptions
+				PHCrashReport.reportCrash(e, "PHWebViewClient - shouldOverrideUrlLoading", PHCrashReport.Urgency.critical);
+			}
+			
+			return false;
+		}
+		
+		private void broadcastDispatch(String dispatch) {
+			if (dispatch == null || dispatch.length() == 0) return;
+			
+			// strip off any query arguments
+			int endingIndex = dispatch.indexOf("?");
+			if (endingIndex != -1)
+				dispatch = dispatch.substring(0, endingIndex);
+			
+			Bundle args = new Bundle();
+			args.putString(Detail.Dispatch.getKey(), dispatch);
+			broadcastEvent(Event.DidReceiveDispatch, args);
+				
 		}
 		
 		private boolean routePlayhavenCallback(String url) {
@@ -323,10 +338,12 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 			
 			try {
 				if (mRouter.hasRoute(url)) {
+					// for UI automation and other testing
+					broadcastDispatch(url);
 					mRouter.route(url);
 					return true;
-				}
-					
+				} 
+				
 			} catch (Exception e) { // swallow all errors
 				PHCrashReport.reportCrash(e, "PHWebViewClient - url routing", PHCrashReport.Urgency.critical);
 			}
@@ -335,140 +352,95 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 		}
 	}
 
-	/**
-	 * This used to public, but now we simply use it for piping internally to
-	 * broadcast. In the future, if other components besides {@see
-	 * PHPublisherContentRequest} need to utilize this class we can make this
-	 * delegate public.
-	 */
-	private Delegate delegate;
+	private boolean loadPrecachedIfExists(String url) {
+		if ( ! url.startsWith("http://")) return false;
+		
+		PHStringUtil.log("Loading precached version of '" + url + "'");
+		try {
+			DiskLruCache.Snapshot precached_snapshot = DiskLruCache.getSharedDiskCache().get(url);
+			
+			// if we are trying to load a web page and we have a cached version, serve it up!
+			if (precached_snapshot == null) return false;
+				
+			File file = precached_snapshot.getInputStreamFile(PHAPIRequest.PRECACHE_FILE_KEY_INDEX);
+			
+			precached_snapshot.close();
+			
+			if (file == null) return false;
+			
+			webview.loadUrl("file:///" + file.getAbsolutePath()); // load local copy
+			
+			return true;
+			
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		
+		return false;
+	}
+	
+	private void loadURLOrPrecached(String url) {
+		try {
+			PHStringUtil.log("Loading template URL: '" + url + "'");
+			boolean hasPrecached = false;
+			
+			if (PHConfig.precache)
+				hasPrecached = loadPrecachedIfExists(url);
+			
+			if ( ! hasPrecached)
+				webview.loadUrl(url);
+			
+		} catch (Exception e) { // swallow all exceptions
+			PHCrashReport.reportCrash(e, "PHContentView - loadURLOrPrecache", PHCrashReport.Urgency.low);
+		}
+		
+	}
+	
+	private void broadcastEvent(Event event, Bundle extras) {
+		Intent intent = new Intent(BROADCAST_INTENT);
+		
+		if (extras == null)
+			extras = new Bundle();
+		
+		extras.putString(Detail.Tag.getKey(),   tag); // the tag for uniquely identifying ourselves
+		extras.putString(Detail.Event.getKey(), event.toString()); // what is the actual event?
+		
+		intent.putExtra(BROADCAST_METADATA, 	extras);
 
-	///////////////////////////////////////////////////////////
-	//////////////// Broadcast (Delegate) /////////////////////
-
-	public static interface Delegate {
-		public void didShow();
-
-		public void didLoad();
-
-		public void didDismiss(PHDismissType type);
-
-		public void didFail(String error);
-
-		public void didUnlockReward(PHReward reward);
-
-		public void didMakePurchase(PHPurchase purchase);
-
-		public void didSendSubrequest(JSONObject context, String callbace);
+		// TODO: install support package and send via LocalBroadcastManager
+		sendBroadcast(intent);
 	}
 
-	/**
-	 * Adapter bridge between actual code and Manager. Since we are an
-	 * activity, we cannot simply call delegate methods directly.
-	 * TODO: This is just plain stupid. Far overkill, we should just be sending the broadcasts ourself.
-	 */
-	public class PHContentViewDelegateBroadcaster implements
-			Delegate {
-		private void sendStateUpdate(String state) {
-			sendBroadcast(createBaseIntent(state));
-		}
-
-		private Intent createBaseIntent(String event) {
-			Intent intent = new Intent(PHBroadcastKey.Action.getKey());
-
-			intent.putExtra(PHBroadcastKey.Tag.getKey(), tag); // originally created by 'pushContent'
-			intent.putExtra(PHBroadcastKey.Event.getKey(), event);
-			return intent;
-		}
-
-		public void didUnlockReward(PHReward reward) {
-			Intent intent = createBaseIntent(PHBroadcastEvent.DidUnlockReward.getKey());
-			intent.putExtra(PHBroadcastKey.Reward.getKey(), reward);
-
-			sendBroadcast(intent);
-		}
-
-		public void didMakePurchase(PHPurchase purchase) {
-			
-			Intent intent = createBaseIntent(PHBroadcastEvent.DidMakePurchase.getKey());
-			intent.putExtra(PHBroadcastKey.Purchase.getKey(), purchase);
-
-			sendBroadcast(intent);
-		}
-
-		public void didSendSubrequest(JSONObject context, String callback) {
-			Intent intent = createBaseIntent(PHBroadcastEvent.DidSendSubrequest.getKey());
-			intent.putExtra(PHBroadcastKey.Context.getKey(), context.toString());
-			intent.putExtra(PHBroadcastKey.Callback.getKey(), callback);
-			intent.putExtra(PHBroadcastKey.Tag.getKey(), tag);
-
-			sendBroadcast(intent);
-		}
-
-		public void didShow() {
-			sendStateUpdate(PHBroadcastEvent.DidShow.getKey());
-		}
-
-		public void didLoad() {
-			//sendStateUpdate("didLoad");
-			sendStateUpdate(PHBroadcastEvent.DidLoad.getKey());
-		}
-
-		public void didDismiss(PHDismissType type) {
-			Intent intent = createBaseIntent(PHBroadcastEvent.DidDismiss.getKey());
-			intent.putExtra(PHBroadcastKey.CloseType.getKey(), type.name());
-			
-			sendBroadcast(intent);
-		}
-
-		public void didFail(String error) {
-			Intent intent = createBaseIntent(PHBroadcastEvent.DidFail.getKey());
-			intent.putExtra(PHBroadcastKey.Error.getKey(), error);
-
-			sendBroadcast(intent);
-		}
-	}
-
-	//TODO: this probably should be cleaned up and checked..
-	// Yes, this is garbage, we shouldn't be listening for this sort of nonsense
-	private void registerBroadcastReceiver() {
+	private void registerPurchaseReceiver() {
 		if (getApplicationContext() != null) {
-			getApplicationContext().registerReceiver(new BroadcastReceiver() {
-
+			
+			purchaseReceiver = new BroadcastReceiver() {
 				@Override
 				public void onReceive(Context context, Intent intent) {
-					try {
-					Bundle extras = intent.getExtras();
-					String event = extras.getString(PHContentView.PHBroadcastReceiverKey.Event.getKey());
-					String resolution = extras.getString(PHContentView.PHBroadcastReceiverEvent.PurchaseResolution.getKey());
+					Bundle metadata = intent.getBundleExtra(BROADCAST_METADATA);
 					
-					if (event.equals(PHContentView.PHBroadcastReceiverEvent.ContentViewsPurchaseSendCallback.getKey())) {
-					    JSONObject purchaseResolutionDict = null;
-						try {
-							purchaseResolutionDict = new JSONObject(resolution);
-							contentViewsPurchaseSendCallback(purchaseResolutionDict);
-						} catch (JSONException e) {
-							PHCrashReport.reportCrash(e, "PHContentView registerBroadcastReciever", PHCrashReport.Urgency.low);
-							e.printStackTrace();
-						}
-					}					
-					} catch (Exception e) { // swallow all exceptions
-						PHCrashReport.reportCrash(e, "PHContentView registerBroadcastReciever", PHCrashReport.Urgency.critical);
+					PHPurchase purchase = (PHPurchase)metadata.getParcelable(Detail.Purchase.getKey());
+					
+					PHStringUtil.log("Received purchase resolution report in PHContentView: " 
+										+ purchase.product + " Resolution: " 
+										+ purchase.resolution.getType());
+					try {
+						JSONObject response = new JSONObject();
+						
+						response.put("resolution", purchase.resolution.getType());
+						sendCallback(purchase.callback, response, null);
+					} catch (JSONException e) {
+						PHCrashReport.reportCrash(e, "PHContentView - BroadcastReceiver - onReceive", PHCrashReport.Urgency.critical);
 					}
+					
 				}
-			}, new IntentFilter(PHContentView.PHBroadcastReceiverKey.Action.getKey()));
+			};
+			
+			getApplicationContext().registerReceiver(purchaseReceiver, new IntentFilter(PURCHASE_CALLBACK_INTENT + tag));
 		}
 	}
 
-	/////////////////////////////////////////////////
-	///// PHPurchase BroadcastReceiver method ///////
-	public void contentViewsPurchaseSendCallback(JSONObject response) {			
-		sendCallback(response.optString    ( "callback" ),
-					 response.optJSONObject( "response" ),
-					 response.optJSONObject( "error"    ));
-
-	}
-
+	
 	/////////////////////////////////////////////////
 	/////////////////// Close Button ////////////////
 
@@ -478,8 +450,8 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 
 			StateListDrawable states = new StateListDrawable();
 
-			BitmapDrawable inactive = (customCloseStates.get(PHButtonState.Up.name()) != null ? new BitmapDrawable(customCloseStates.get(PHButtonState.Up.name())) : null);
-			BitmapDrawable active = (customCloseStates.get(PHButtonState.Down.name()) != null ? new BitmapDrawable(customCloseStates.get(PHButtonState.Down.name())) : null);
+			BitmapDrawable inactive = (customCloseStates.get(ButtonState.Up.name()) != null ? new BitmapDrawable(customCloseStates.get(ButtonState.Up.name())) : null);
+			BitmapDrawable active = (customCloseStates.get(ButtonState.Down.name()) != null ? new BitmapDrawable(customCloseStates.get(ButtonState.Down.name())) : null);
 
 			if (inactive == null) {
 				PHCloseImageResource inactiveRes = (PHCloseImageResource) PHResourceManager
@@ -493,12 +465,15 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 				active = new BitmapDrawable(active_res.loadImage(PHConfig.screen_density_type));
 			}
 
-			states.addState(new int[] { PHButtonState.Down.getAndroidState() },
+			states.addState(new int[] { ButtonState.Down.getAndroidState() },
 					active);
-			states.addState(new int[] { PHButtonState.Up.getAndroidState() },
+			states.addState(new int[] { ButtonState.Up.getAndroidState() },
 					inactive);
 
 			closeBtn = new ImageButton(this);
+			
+			//TODO: should make this more accessible
+			closeBtn.setContentDescription("closeButton");
 			closeBtn.setVisibility(View.INVISIBLE); // not View.GONE to ensure
 													// proper layout
 
@@ -529,10 +504,9 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 	private void buttonDismiss() {
 		PHStringUtil.log("User dismissed " + this.toString());
 		
-		if (delegate != null) {
-			delegate.didDismiss(PHDismissType.CloseButtonTriggered);
-			delegate = null;
-		}
+		Bundle args = new Bundle();
+		args.putString(Detail.CloseType.getKey(), PHDismissType.CloseButtonTriggered.toString());
+		broadcastEvent(Event.DidDismiss, args);
 
 		super.finish();
 	}
@@ -618,13 +592,13 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 			Intent contentViewIntent = new Intent(context, PHContentView.class);
 			
 			// attach the content object
-			contentViewIntent.putExtra(PHContentView.PHContentViewArgument.Content.getKey(), content);
+			contentViewIntent.putExtra(PHContentView.IntentArgument.Content.getKey(), content);
 			
 			// attach custom closeImages
 			if (customCloseImages != null && customCloseImages.size() > 0)
-				contentViewIntent.putExtra(PHContentView.PHContentViewArgument.CustomCloseBtn.getKey(), customCloseImages);
+				contentViewIntent.putExtra(PHContentView.IntentArgument.CustomCloseBtn.getKey(), customCloseImages);
 			
-			contentViewIntent.putExtra(PHContentView.PHContentViewArgument.Tag.getKey(), tag);
+			contentViewIntent.putExtra(PHContentView.IntentArgument.Tag.getKey(), tag);
 			
 			context.startActivity(contentViewIntent);
 			
@@ -642,10 +616,9 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 		if (this.getIsBackBtnCancelable()) {
 			PHStringUtil.log("The content unit was dismissed by the user using back button");
 			
-			if (delegate != null) {
-				delegate.didDismiss(PHDismissType.CloseButtonTriggered);
-				delegate = null;
-			}
+			Bundle args = new Bundle();
+			args.putString(Detail.CloseType.getKey(), PHDismissType.CloseButtonTriggered.toString());
+			broadcastEvent(Event.DidDismiss, args);
 
 			super.onBackPressed();
 		}
@@ -657,12 +630,23 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 	protected void onPause() {
 		super.onPause();
 		
+//		try {
+			// TODO: enable this
+			//TODO: not sure if this is the right place to put it? Can close too quickly...
+//			if (DiskLruCache.getSharedDiskCache() != null)
+//				DiskLruCache.getSharedDiskCache().close();
+//		} catch (IOException e) {
+//			e.printStackTrace();
+//		}
+		
 		PHPublisherContentRequest.dismissedContent(); // log that PHContentView is no longer visible
 	}
 	
 	@Override
 	protected void onDestroy() {
 		super.onDestroy();
+		getApplicationContext().unregisterReceiver(purchaseReceiver);
+		
 		if (webview != null) {
 			// make sure we don't leak any memory
 			webview.setWebChromeClient(null);
@@ -774,17 +758,18 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 		
 		mRouter = new PHRequestRouter();
 		
-		// create Broadcast delegate
-		delegate = new PHContentViewDelegateBroadcaster();
 
 		// load content from intent
-		content = getIntent().getParcelableExtra(PHContentViewArgument.Content.getKey());
+		content = getIntent().getParcelableExtra(IntentArgument.Content.getKey());
 		
 		// tag to send back to PHPublisherContentRequest
-		tag = getIntent().getStringExtra(PHContentViewArgument.Tag.getKey());
+		tag = getIntent().getStringExtra(IntentArgument.Tag.getKey());
 		
-		if (getIntent().hasExtra(PHContentViewArgument.CustomCloseBtn.getKey())) {
-			customCloseStates = (HashMap<String, Bitmap>)getIntent().getSerializableExtra(PHContentViewArgument.CustomCloseBtn.getKey());
+		if (tag != null)
+			registerPurchaseReceiver(); // listen for purchase result callbacks
+		
+		if (getIntent().hasExtra(IntentArgument.CustomCloseBtn.getKey())) {
+			customCloseStates = (HashMap<String, Bitmap>)getIntent().getSerializableExtra(IntentArgument.CustomCloseBtn.getKey());
 		}
 		
 		// by default, we are cancelable only via back button (false=touch, back btn=true)
@@ -799,13 +784,6 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 		}
 	}
 
-	@Override
-	public boolean dispatchTouchEvent(MotionEvent evt) {
-		//DEBUG ONLY!
-		PHStringUtil.log("User touched content view: = new PointF("+evt.getX()+"f, "+evt.getY()+"f);");
-		super.dispatchTouchEvent(evt);
-		return true;
-	}
 	
 	@Override
 	public boolean onTouchEvent(MotionEvent event) {
@@ -893,56 +871,65 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 		sizeToOrientation(); // must be called *after* setContentView
 
 		webview = new WebView(this);
+
+		setupWebview();
 		
-		webview.setBackgroundColor(Color.TRANSPARENT);
-
-		setWebViewCachingDisabled( ! PHConfig.cache);
-		
-		//TODO: all webview setup should be moved to a method called setupWebView
-
-		// Enables scaling via the HTML <viewport> tag in the WebView
-		// Ensure the scaling works correctly
-		webview.getSettings().setUseWideViewPort(true);
-		webview.getSettings().setSupportZoom(true);
-		webview.getSettings().setLoadWithOverviewMode(true);
-		webview.getSettings().setJavaScriptEnabled(true);
-		webview.setInitialScale(0);
-
 		// TODO: in the future the *webview* frame will change instead of the
 		// entire dialog frame..
 		RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(
 				LayoutParams.FILL_PARENT, LayoutParams.FILL_PARENT);
 
-		webview.setWebViewClient(new PHWebViewClient());
-		webview.setWebChromeClient(new PHWebViewChrome());
+		
 		webview.setLayoutParams(params);
-		webview.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY); // avoid strip on side of webview
-
 		rootView.addView(webview);
 
 		if (hasOrientationFrame()) {
-			if (delegate != null)
-				delegate.didShow();
+			
+			// notify delegates
+			Bundle args = new Bundle();
+			args.putParcelable(Detail.Content.getKey(), content);
+			broadcastEvent(Event.DidShow, args);
 
 			loadTemplate();
 		}
 
-		registerBroadcastReceiver();
 		
-		setWebviewProtocolVersion(); // need to tell the webview what callbacks are supported
+		setWebviewProtocolVersion(webview); // need to tell the webview what callbacks are supported
 		
 		// position closeBtn in case the content view never shows..
 		placeCloseButton();
 
 		showCloseAfterTimeout();
-
+				 
 		// TODO: signup for orientation notifications
 		} catch(Exception e) { //swallow all exceptions
 			PHCrashReport.reportCrash(e, "PHContentView - onStart()", PHCrashReport.Urgency.critical);
 		}
 	}
 
-	/** Enables/disables webview caching. Refactored into another method to increase code clarity since so many
+	
+	private void setupWebview() {
+		webview.setBackgroundColor(Color.TRANSPARENT);
+
+		setWebViewCachingDisabled( false );
+		
+		// Enables scaling via the HTML <viewport> tag in the WebView
+		// Ensure the scaling works correctly
+		webview.getSettings().setUseWideViewPort(true);
+		webview.getSettings().setSupportZoom(true);
+		webview.getSettings().setLoadWithOverviewMode(true);
+		webview.getSettings().setJavaScriptEnabled(true);
+		webview.setInitialScale(0); // annoying hack to fix scale
+		
+		webview.setWebViewClient(new PHWebViewClient());
+		webview.setWebChromeClient(new PHWebViewChrome());
+		
+		webview.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY); // avoid strip on side of webview
+		
+	}
+	
+	/** 
+	 * Enables/disables webview caching. Refactored into another method to increase code clarity since so many
 	 * stupid extra settings
 	 */
 	private void setWebViewCachingDisabled(boolean isDisabled) {
@@ -950,14 +937,13 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 			webview.getSettings().setCacheMode(WebSettings.LOAD_NO_CACHE);
 		else {
 			//TODO: cleanup formatting and remove unnecessary methods
-			webview.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
-			webview.getSettings().setAppCacheMaxSize(PHConfig.cache_size);                         
-			String appCachePath = getApplicationContext().getCacheDir().getAbsolutePath(); // TODO: not sure I like this
-			webview.getSettings().setAppCachePath(appCachePath);
-			webview.getSettings().setAllowFileAccess(true);
-			webview.getSettings().setAppCacheEnabled(true);
-			webview.getSettings().setDomStorageEnabled(true);
-			webview.getSettings().setDatabaseEnabled(true);
+			webview.getSettings()	.setCacheMode			(WebSettings.LOAD_DEFAULT);
+			webview.getSettings()	.setAppCacheMaxSize 	(PHConfig.precache_size);                         
+			webview.getSettings()	.setAppCachePath		(getApplicationContext().getCacheDir().getAbsolutePath()); // we have to explicitly set this
+			webview.getSettings()	.setAllowFileAccess 	(true);
+			webview.getSettings()	.setAppCacheEnabled  	(true);
+			webview.getSettings()	.setDomStorageEnabled	(true);
+			webview.getSettings()	.setDatabaseEnabled		(true);
 		}
 	}
 	
@@ -1010,7 +996,7 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 
 		try {
 		    PHStringUtil.log("Template URL: " + content.url);
-		    webview.loadUrl(content.url.toString());
+		    loadURLOrPrecached(content.url.toString());
 		
 		} catch (Exception e) {
 			//TODO: crash report?
@@ -1023,17 +1009,14 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 	//////////// Dismiss Methods ///////////////////////////
 
 	public void dismiss() {
-		//TODO: far too many dismiss handlers!!
 		closeView();
 	}
 
 	public void dismiss(String error) {
-		if (delegate == null)
-			return;
-
-		closeView();
+		// first broadcast a message of our failure
+		Hashtable<String, Object> args = new Hashtable<String, Object>();
+		
 	}
-
 	private void closeView() {
 
 		if (webview != null) {
@@ -1046,24 +1029,15 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 		// TODO: do something with the animate parameter?
 
 		// TODO: remove from orientation notification
-
-		finalDismiss();
+		PHURLLoader.invalidateLoaders(this); // cancel any url loaders still running
 
 		// for now, just dismiss the activity..
 		super.finish();
 	}
 
-	private void finalDismiss() {
-		prepareForReuse();
-
-		if (delegate != null) {
-			delegate.didDismiss(PHDismissType.ApplicationTriggered);
-			delegate = null;
-		}
-
-	}
 	
-	private void setWebviewProtocolVersion() {
+	/** This method is static because it is called from the UI automation framework*/
+	public static void setWebviewProtocolVersion(WebView webview) {
 		if (webview == null) return;
 		
 		String javascriptCommand = String.format(
@@ -1075,44 +1049,27 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 		
 		webview.loadUrl(javascriptCommand);
 	}
-	
-	private void clearWebView() {
-		// detailed: http://stackoverflow.com/questions/2933315/clear-uiwebview-content-upon-dismissal-of-modal-view-iphone-os-3-0
-		if (webview != null)
-			webview.loadUrl("javascript:document.open();document.close();");
-	}
-	
-	
-	private void prepareForReuse() {
-		// I think this might be a bit stupid since we don't reuse them
-		content = null;
-		
-		clearWebView();
-
-		// TODO: remove ourself from any events we subscribed to?
-		PHURLLoader.invalidateLoaders(this); // cancel any url loaders still running
-											
-
-	}
 
 	/////////////////////////////////////////////////////////
 	///////////////// Reward Validation /////////////////////
 
 	public boolean validateReward(JSONObject data) throws NoSuchAlgorithmException, 
 														  UnsupportedEncodingException {
-		String reward 			= data.optString(PHRewardKey.IDKey.			key(), "");
-		String quantity 		= data.optString(PHRewardKey.QuantityKey.	key(), "");
-		String receipt 			= data.optString(PHRewardKey.ReceiptKey.	key(), "");
-		String signature 		= data.optString(PHRewardKey.SignatureKey.	key(), "");
+		String reward 			= data.optString(Reward.IDKey.			key(), "");
+		String quantity 		= data.optString(Reward.QuantityKey.	key(), "");
+		String receipt 			= data.optString(Reward.ReceiptKey.	key(), "");
+		String signature 		= data.optString(Reward.SignatureKey.	key(), "");
+		
+		String device_id 		= (PHConfig.device_id != null ? PHConfig.device_id : "null");
 		
 		String generatedSig		= PHStringUtil.hexDigest(String.format(
-										"%s:%s:%s:%s:%s", 
-										reward,
-										quantity, 
-										PHConfig.device_id, 
-										receipt,
-										PHConfig.secret
-										));
+														"%s:%s:%s:%s:%s", 
+														reward,
+														quantity, 
+														device_id, 
+														receipt,
+														PHConfig.secret
+														));
 		
 		PHStringUtil.log("Checking reward signature:  " + signature + " against: " + generatedSig);
 		
@@ -1127,11 +1084,11 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 		if (data == null)
 			return false;
 
-		String productID 		  = data.optString(PHPurchaseKey.ProductIDKey.	key(), "");
-		String name 			  = data.optString(PHPurchaseKey.NameKey.	  	key(), "");
-		String quantity 		  = data.optString(PHPurchaseKey.QuantityKey. 	key(), "");
-		String receipt 			  = data.optString(PHPurchaseKey.ReceiptKey.  	key(), "");
-		String signature 		  = data.optString(PHPurchaseKey.SignatureKey.	key(), "");
+		String productID 		  = data.optString(Purchase.ProductIDKey.	key(), "");
+		String name 			  = data.optString(Purchase.NameKey.	  	key(), "");
+		String quantity 		  = data.optString(Purchase.QuantityKey. 	key(), "");
+		String receipt 			  = data.optString(Purchase.ReceiptKey.  	key(), "");
+		String signature 		  = data.optString(Purchase.SignatureKey.	key(), "");
 		
 		String generatedSig		  = PHStringUtil.hexDigest(
 										String.format("%s:%s:%s:%s:%s:%s",	productID,
@@ -1168,7 +1125,7 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 			// usually then makes a dismiss call which hides us to show the underlying "sub content"
 			// Thus, the *template* dismisses us *after* we have already displayed the new content
 			
-			// TODO: There does appear to be some delay however, resulting in no content units showing temporarily during the transiotn
+			// TODO: There does appear to be some delay however, resulting in no content units showing temporarily during the transitions
 			// might want to fix this in the future?
 			
 			sub_request.source.sendCallback(sub_request.callback, responseData, null);
@@ -1177,12 +1134,14 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 				JSONObject error_dict = new JSONObject();
 				error_dict.put("error", "1");
 				sub_request.source.sendCallback(sub_request.callback,
-						responseData, error_dict);
+												responseData, 
+												error_dict);
 
-				if (delegate != null) {
-					delegate.didDismiss(PHDismissType.ApplicationTriggered);
-					delegate = null;
-				}
+				// TODO: should we be sending an error back instead?
+				Bundle args = new Bundle();
+				args.putString(Detail.CloseType.getKey(), 
+						 	   PHDismissType.ApplicationTriggered.toString());
+				broadcastEvent(Event.DidDismiss, args);
 
 			} catch (JSONException e) {
 				e.printStackTrace();
@@ -1222,9 +1181,10 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 		try {
 			String contextStr = PHRequestRouter.getCurrentQueryVar("context");
 			
-			JSONObject context = new JSONObject(contextStr != null ?
-												contextStr 		   :
-												"{}"			   );
+			JSONObject context = new JSONObject(contextStr != null 			  &&
+												! contextStr.equals("undefined" ) ?
+												contextStr 		   				  :
+												"{}"			   				  );
 			
 			if ( ! JSONObject.NULL.equals(context) && 
 					context.length() > 0 			 ) 
@@ -1237,6 +1197,16 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 		return null;
 	}
 
+	private void broadcastStartedSubrequest(JSONObject context, String callback) {
+		Bundle args = new Bundle();
+		
+		args.putString(Detail.Context.getKey(), 	context.toString());
+		args.putString(Detail.Callback.getKey(), 	callback);
+		args.putString(Detail.Tag.getKey(), 		tag);
+		
+		broadcastEvent(Event.DidSendSubrequest, args);
+	}
+	
 	public void handleSubrequest() {
 		
 		JSONObject context = getRequestContext();
@@ -1249,6 +1219,9 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 		request.source 		= this;
 
 		request.send();
+		
+		// tell all delegates we have started a subrequest
+		broadcastStartedSubrequest(context, request.callback);
 	}
 
 	public void handleDismiss() {
@@ -1288,12 +1261,15 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 
 				PHReward r  = new PHReward();
 				
-				r.name 		= reward.optString(PHRewardKey.IDKey		.key(), "");
-				r.quantity 	= reward.optString(PHRewardKey.QuantityKey	.key(), "");
-				r.receipt 	= reward.optString(PHRewardKey.ReceiptKey	.key(), "");
+				r.name 		= reward.optString(Reward.IDKey		.key(), "");
+				r.quantity 	= reward.optInt   (Reward.QuantityKey	.key(), -1);
+				r.receipt 	= reward.optString(Reward.ReceiptKey	.key(), "");
 
-				if (delegate != null)
-					delegate.didUnlockReward(r);
+				
+				Bundle args = new Bundle();
+				args.putParcelable(Detail.Reward.getKey(), r);
+				
+				broadcastEvent(Event.DidUnlockReward, args);
 			}
 
 		}
@@ -1323,18 +1299,19 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 			if ( ! JSONObject.NULL.equals(purchase) &&
 				   validatePurchase(purchase)		  ) {
 				
-				PHPurchase p 	= new PHPurchase();
-				p.product 		= purchase.optString	(PHPurchaseKey.ProductIDKey	.key(), "");
-				p.name 			= purchase.optString	(PHPurchaseKey.NameKey		.key(), "");
-				p.quantity 		= purchase.optInt		(PHPurchaseKey.QuantityKey	.key(), -1);
-				p.receipt 		= purchase.optString	(PHPurchaseKey.ReceiptKey	.key(), "");
+				PHPurchase p 	= new PHPurchase(PURCHASE_CALLBACK_INTENT + this.tag); // pass in an intent callback
+				p.product 		= purchase.optString	(Purchase.ProductIDKey	.key(), "");
+				p.name 			= purchase.optString	(Purchase.NameKey		.key(), "");
+				p.quantity 		= purchase.optInt		(Purchase.QuantityKey	.key(), -1);
+				p.receipt 		= purchase.optString	(Purchase.ReceiptKey	.key(), "");
 				p.callback	    = PHRequestRouter       .getCurrentQueryVar("callback");
 
-				String cookie 	= purchase.optString(PHPurchaseKey.CookieKey.key());
+				String cookie 	= purchase.optString(Purchase.CookieKey.key());
 	            PHPublisherIAPTrackingRequest.setConversionCookie(p.product, cookie);
 
-				if (delegate != null)
-					delegate.didMakePurchase(p);
+				Bundle args = new Bundle();
+				args.putParcelable(Detail.Purchase.getKey(), p);
+				broadcastEvent(Event.DidMakePurchase, args);
 			}
 			
 		}
@@ -1358,7 +1335,6 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 		String shouldHide = context.optString("hidden");
 		
 		// should we hide the button?
-		
 		if ( ! JSONObject.NULL.equals(shouldHide) && 
 			   shouldHide.length() > 0 				)
 			closeBtn.setVisibility((Boolean.parseBoolean(shouldHide) ? View.GONE : View.VISIBLE));
@@ -1412,12 +1388,18 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 	
 	public void loaderFinished(PHURLLoader loader) {
 		
-		if (loader.getCallback() != null) { // need to notify webview (subcontent request?)
+		if (loader.getCallback() != null) { // called as a launch event
 		try {
 			JSONObject r = new JSONObject();
 			r.put("url", loader.getTargetURL());
 			
 			sendCallback(loader.getCallback(), r, null);
+			
+			
+			// broadcast our loaded url
+			Bundle args = new Bundle();
+			args.putString(Detail.LaunchURL.getKey(), loader.getTargetURL());
+			broadcastEvent(Event.DidLaunchURL, args);
 			
 		} catch (JSONException e) {
 			PHCrashReport.reportCrash(e, "PHContentView - loaderFinished", PHCrashReport.Urgency.critical);
@@ -1426,9 +1408,11 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 		}
 		}
 		
-		if (delegate != null)
-			delegate.didDismiss(PHDismissType.ContentUnitTriggered);
+		Bundle args = new Bundle();
+		args.putString(Detail.CloseType.getKey(), PHDismissType.ContentUnitTriggered.toString());
+		broadcastEvent(Event.DidDismiss, args);
 	
+		// TODO: perhaps we should let the content template dismiss us?
 		dismiss();
 	}
 
@@ -1450,10 +1434,11 @@ public class PHContentView extends Activity implements PHURLLoader.PHURLLoaderDe
 		}
 		}
 		
-		if (delegate != null)
-			delegate.didDismiss(PHDismissType.NoContentTriggered);
 		
-		// TODO: should we have a try catch block?
+		Bundle args = new Bundle();
+		args.putString(Detail.CloseType.getKey(), PHDismissType.NoContentTriggered.toString());
+		broadcastEvent(Event.DidDismiss, args);
+		
 		dismiss();
 	}
 

@@ -20,16 +20,20 @@ import android.os.SystemClock;
 
 import com.playhaven.src.common.PHAPIRequest;
 import com.playhaven.src.common.PHCrashReport;
-import com.playhaven.src.publishersdk.content.PHContentView.PHButtonState;
+import com.playhaven.src.publishersdk.content.PHContentView.ButtonState;
 import com.playhaven.src.utils.PHStringUtil;
 
-/** Represents a request for an actual advertisement or "content". We handle the close button and actual logistics such as rewards, etc.
+/** 
+ * Represents a request for an actual advertisement or "content". We handle the close button and actual logistics such as rewards, etc.
  * Each instance makes a request to the server for the content template "data" and then "pushes" (displays) a PHContentView. The PHContentView
- * is an Activity which in turn can display other PHContentView if the content template makes a subrequest, etc. 
+ * is an Activity which in turn can display other PHContentView if the content template makes a subrequest, etc.
+ * 
+ * @author Sam Stewart
+ *  
  */
-public class PHPublisherContentRequest extends PHAPIRequest implements PHContentView.Delegate {
+public class PHPublisherContentRequest extends PHAPIRequest{
 	
-	private WeakReference<Context> applicationContext; // should be the main Application context
+	private WeakReference<Context> applicationContext; // should be the main Application context (we must have it...)
 	
 	private WeakReference<Context> activityContext; // should be an activity context
 		
@@ -75,8 +79,8 @@ public class PHPublisherContentRequest extends PHAPIRequest implements PHContent
 	}
 	
 	public static interface CustomizeDelegate {
-		public Bitmap closeButton(PHPublisherContentRequest request, PHButtonState state);
-		public int borderColor(PHPublisherContentRequest request, PHContent content);
+		public Bitmap closeButton (PHPublisherContentRequest request, ButtonState state);
+		public int borderColor	  (PHPublisherContentRequest request, PHContent content);
 	}
 	
 	public static interface RewardDelegate {
@@ -84,25 +88,45 @@ public class PHPublisherContentRequest extends PHAPIRequest implements PHContent
 	}
 	
 	public static interface PurchaseDelegate {
-		public void makePurchase(PHPublisherContentRequest request, PHPurchase purchase);
+		public void shouldMakePurchase(PHPublisherContentRequest request, PHPurchase purchase);
 	}
 
 	public static interface ContentDelegate extends PHAPIRequest.Delegate {
-		public void willGetContent(PHPublisherContentRequest request);
-		public void willDisplayContent(PHPublisherContentRequest request, PHContent content);
-		public void didDisplayContent(PHPublisherContentRequest request, PHContent content);
-		public void didDismissContent(PHPublisherContentRequest request, PHDismissType type);
+		public void willGetContent		(PHPublisherContentRequest request					  );
+		public void willDisplayContent	(PHPublisherContentRequest request, PHContent content );
+		public void didDisplayContent	(PHPublisherContentRequest request, PHContent content );
+		public void didDismissContent	(PHPublisherContentRequest request, PHDismissType type);
 	}
 	
-	public ContentDelegate content_delegate = null;
+	private ContentDelegate content_listener 	= null;
 	
-	public RewardDelegate reward_delegate = null;
+	public void setOnContentListener(ContentDelegate content_listener) {
+		this.content_listener = content_listener;
+	}
 	
-	public PurchaseDelegate purchase_delegate = null;
+	private RewardDelegate reward_listener 		= null;
 	
-	public CustomizeDelegate customize_delegate = null;
+	public void setOnContentListener(RewardDelegate reward_listener) {
+		this.reward_listener = reward_listener;
+	}
 	
-	public FailureDelegate failure_delegate = null;
+	private PurchaseDelegate purchase_listener 	= null;
+	
+	public void setOnPurchaseListener(PurchaseDelegate purchase_listener) {
+		this.purchase_listener = purchase_listener;
+	}
+	
+	private CustomizeDelegate customize_listener = null;
+	
+	public void setOnCustomizeListener(CustomizeDelegate customize_listener) {
+		this.customize_listener = customize_listener;
+	}
+	
+	private FailureDelegate failure_listener 	= null;
+	
+	public void setOnFailureListener(FailureDelegate failure_listener) {
+		this.failure_listener = failure_listener;
+	}
 	
 	private static ConcurrentLinkedQueue<Long> dismissedStamps = new ConcurrentLinkedQueue<Long>(); // time stamps for dismissal
 	
@@ -132,37 +156,37 @@ public class PHPublisherContentRequest extends PHAPIRequest implements PHContent
 	private void setDelegates(Object delegate) {
 		
 		if (delegate instanceof RewardDelegate)
-			reward_delegate = (RewardDelegate)delegate;
+			reward_listener = (RewardDelegate)delegate;
 		else {
-			reward_delegate = null;
+			reward_listener = null;
 			PHStringUtil.log("*** RewardDelegate is not implemented. If you are using rewards this needs to be implemented.");
 		}
 
 		if (delegate instanceof PurchaseDelegate)
-			purchase_delegate = (PurchaseDelegate)delegate;
+			purchase_listener = (PurchaseDelegate)delegate;
 		else {
-			purchase_delegate = null;
+			purchase_listener = null;
 			PHStringUtil.log("*** PurchaseDelegate is not implemented. If you are using VGP this needs to be implemented.");
 		}
 
 		if (delegate instanceof CustomizeDelegate)
-			customize_delegate = (CustomizeDelegate)delegate; 
+			customize_listener = (CustomizeDelegate)delegate; 
 		else {
-			customize_delegate = null;
+			customize_listener = null;
 			PHStringUtil.log("*** CustomizeDelegate is not implemented, using Play Haven close button bitmap. Implement to use own close button bitmap.");
 		}
 		
 		if (delegate instanceof FailureDelegate)
-			failure_delegate = (FailureDelegate)delegate;
+			failure_listener = (FailureDelegate)delegate;
 		else {
-			failure_delegate = null;
+			failure_listener = null;
 			PHStringUtil.log("*** FailureDelegate is not implemented. Implement if want to be notified of failed content downloads.");
 		}
 		
 		if (delegate instanceof ContentDelegate)
-			content_delegate = (ContentDelegate)delegate;
+			content_listener = (ContentDelegate)delegate;
 		else {
-			content_delegate = null;
+			content_listener = null;
 			PHStringUtil.log("*** ContentDelegate is not implemented. Implement if want to be notified of content request states.");
 		}
 
@@ -173,7 +197,7 @@ public class PHPublisherContentRequest extends PHAPIRequest implements PHContent
 		
 		this.placement = placement;
 		
-		// we use the Application Context to avoid memory leaks
+		// we use the Application Context to ensure decent stability (exists throughout application's life)
 		this.applicationContext = new WeakReference<Context>(activity.getApplicationContext());
 		this.activityContext = new WeakReference<Context>(activity);
 		
@@ -199,6 +223,7 @@ public class PHPublisherContentRequest extends PHAPIRequest implements PHContent
 	}
 	
 	public void setState(PHRequestState state) {
+	    if (state      == null) return;
 		if (this.state == null) this.state = state; //guard against null edge case..
 		
 		//only set state ahead! (if set above, will just ignore)
@@ -224,16 +249,16 @@ public class PHPublisherContentRequest extends PHAPIRequest implements PHContent
 		setState(PHRequestState.Preloading);
 		super.send(); // now actually send the request
 		
-		if(content_delegate != null)
-			content_delegate.willGetContent(this);
+		if(content_listener != null)
+			content_listener.willGetContent(this);
 
 	}
 	
 	private void showContent() {
 		if (targetState == PHRequestState.DisplayingContent || targetState == PHRequestState.Done) {
 			
-			if (content_delegate != null)
-				content_delegate.willDisplayContent(this, content);
+			if (content_listener != null)
+				content_listener.willDisplayContent(this, content);
 			
 			setState(PHRequestState.DisplayingContent);
 			
@@ -241,12 +266,12 @@ public class PHPublisherContentRequest extends PHAPIRequest implements PHContent
 			BitmapDrawable active = null;
 			HashMap<String, Bitmap> customClose = new HashMap<String, Bitmap>();
 			
-			if (customize_delegate != null) {
-				inactive = new BitmapDrawable(customize_delegate.closeButton(this, PHButtonState.Up));
-				active = new BitmapDrawable(customize_delegate.closeButton(this, PHButtonState.Up));
+			if (customize_listener != null) {
+				inactive = new BitmapDrawable(customize_listener.closeButton(this, ButtonState.Up));
+				active = new BitmapDrawable(customize_listener.closeButton(this, ButtonState.Up));
 
-				customClose.put(PHButtonState.Up.name(), inactive.getBitmap());
-				customClose.put(PHButtonState.Down.name(), active.getBitmap());
+				customClose.put(ButtonState.Up.name(), inactive.getBitmap());
+				customClose.put(ButtonState.Down.name(), active.getBitmap());
 			}
 			
 			String tag = "PHContentView: " + this.hashCode(); // generate a unique tag for the PHContentView 
@@ -254,8 +279,8 @@ public class PHPublisherContentRequest extends PHAPIRequest implements PHContent
 			// TODO: not sure the content view should do its own pushing?
 			contentTag = PHContentView.pushContent(content, activityContext.get(), customClose, tag);
 
-			if(content_delegate != null) 
-				content_delegate.didDisplayContent(this, content);
+			if(content_listener != null) 
+				content_listener.didDisplayContent(this, content);
 		}
 	}
 	
@@ -279,8 +304,8 @@ public class PHPublisherContentRequest extends PHAPIRequest implements PHContent
 		try {
 		targetState = PHRequestState.DisplayingContent;
 		
-		if(content_delegate != null)
-			content_delegate.willGetContent(this);
+		if(content_listener != null)
+			content_listener.willGetContent(this);
 		
 		continueLoading();
 		
@@ -310,7 +335,7 @@ public class PHPublisherContentRequest extends PHAPIRequest implements PHContent
 	}
 	
 	@Override
-	protected void handleRequestSuccess(JSONObject response) {
+	public void handleRequestSuccess(JSONObject response) {
 		content = new PHContent(response);
 		
 		setState(PHRequestState.Preloaded);
@@ -320,132 +345,67 @@ public class PHPublisherContentRequest extends PHAPIRequest implements PHContent
 	
 	/////////////////////////////////////////////////////////////////////
 	/////////////////// Broadcast Routing Methods ///////////////////////
+	
 	private void registerReceiver() {
 		
+		// TODO: we should *unregister* the receiver eventually
+		// TODO: if we don't unregister, this might lead to a null pointer exceptino
 		if (applicationContext.get() != null) {
-			// TODO: not sure if I like this at all. We need to clean this up big time
-				applicationContext.get().registerReceiver(new BroadcastReceiver() {
+			// 
+			applicationContext.get().registerReceiver(new BroadcastReceiver() {
+				
+				@Override
+				public void onReceive(Context context, Intent intent) {
+					Bundle md 	= intent.getBundleExtra(PHContentView.BROADCAST_METADATA);
+					if (md == null) return;
 					
-					@Override
-					public void onReceive(Context context, Intent intent) {
-						Bundle extras = intent.getExtras();
-						String event  = extras.getString(PHContentView.PHBroadcastKey.Event.getKey());
-						String tag    = extras.getString(PHContentView.PHBroadcastKey.Tag.getKey());
-						
-						if ( ! tag.equals(contentTag)) return; // only process if it is relevant to us
-						
-						if (event.equals(PHContentView.PHBroadcastEvent.DidShow.getKey()))
-							didShow();
-						
-						else if (event.equals(PHContentView.PHBroadcastEvent.DidLoad.getKey()))
-							didLoad();
-						
-						else if (event.equals(PHContentView.PHBroadcastEvent.DidDismiss.getKey())) {
-							PHDismissType type = PHDismissType.valueOf(extras.getString(PHContentView.PHBroadcastKey.CloseType.getKey()));
-						
-							didDismiss(null, type);
-							
-						} else if (event.equals(PHContentView.PHBroadcastEvent.DidFail.getKey())) {
-							String error = extras.getString(PHContentView.PHBroadcastKey.Error.getKey());
-						
-							didFail(null, error);
-							
-						} else if (event.equals(PHContentView.PHBroadcastEvent.DidSendSubrequest.getKey())) {
-							String callback = extras.getString(PHContentView.PHBroadcastKey.Callback.getKey());
-							String jsonContextStr = extras.getString(PHContentView.PHBroadcastKey.Context.getKey());
-							JSONObject jsonContext = null;
-						
-							try {
-								jsonContext = new JSONObject(jsonContextStr);
-							} catch (JSONException e) {
-								PHStringUtil.log("Could not parse JSON in PHContentView didSendSubrequest callback.");
-							}
-						
-							didSendSubrequest(jsonContext, callback, null);
-						
-						} else if (event.equals(PHContentView.PHBroadcastEvent.DidUnlockReward.getKey())) {
-							PHReward reward = extras.getParcelable(PHContentView.PHBroadcastKey.Reward.getKey());
-						
-							didUnlockReward(null, reward);
-							
-						} else if (event.equals(PHContentView.PHBroadcastEvent.DidMakePurchase.getKey())) {
-							PHPurchase purchase = extras.getParcelable(PHContentView.PHBroadcastKey.Purchase.getKey());
-						
-							didMakePurchase(null, purchase);
-						}
+					String eventStr  = md.getString(PHContentView.Detail.Event.getKey());
+					if (eventStr == null) return;
 					
+					PHContentView.Event event = PHContentView.Event.valueOf(eventStr);
+					// the tag used for identifying the phcontentview
+					String tag    = md.getString(PHContentView.Detail.Tag.getKey());
+					
+					if (tag == null || !tag.equals(contentTag)) return; // only process if it is relevant to us
+					
+					// TODO: listen to didLoad or didShow?
+					if (event == PHContentView.Event.DidShow) {
+						PHContent content = (PHContent) md.getParcelable(PHContentView.Detail.Content.getKey());
+						
+						if (content_listener != null)
+							content_listener.didDisplayContent(PHPublisherContentRequest.this, content);
+						
+					} else if (event == PHContentView.Event.DidDismiss) {
+						PHDismissType type = PHDismissType.valueOf(
+														md.getString(
+																	PHContentView.Detail.CloseType.getKey()
+																			));
+					
+						if(content_listener != null) 
+							content_listener.didDismissContent(PHPublisherContentRequest.this, type);
+						
+					} else if (event == PHContentView.Event.DidFail) {
+						String error = md.getString(PHContentView.Detail.Error.getKey());
+					
+						if(failure_listener != null) 
+							failure_listener.didFail(PHPublisherContentRequest.this, error);
+						
+					} else if (event == PHContentView.Event.DidUnlockReward) {
+						PHReward reward = md.getParcelable(PHContentView.Detail.Reward.getKey());
+					
+						if (reward_listener != null) 
+							reward_listener.unlockedReward(PHPublisherContentRequest.this, reward);
+						
+					} else if (event == PHContentView.Event.DidMakePurchase) {
+						PHPurchase purchase = md.getParcelable(PHContentView.Detail.Purchase.getKey());
+					
+						if (purchase_listener != null) 
+							purchase_listener.shouldMakePurchase(PHPublisherContentRequest.this, purchase);
 					}
-				}, new IntentFilter(PHContentView.PHBroadcastKey.Action.getKey()));
+				
+				}
+			}, new IntentFilter(PHContentView.BROADCAST_INTENT));
 			}
-		//}
-	}
-	
-	//////////////////////////////////////////////////////////////////
-	//// PHContentView methods (Called from BroadcastReciever) ///////
-	
-	public void didShow() {
-
 	}
 
-
-	public void didLoad() {
-		
-	}
-
-	public void didDismiss(PHContentView view, PHDismissType type) {
-		if(content_delegate != null) 
-			content_delegate.didDismissContent(this, type);
-	}
-
-	public void didFail(PHContentView view, String error) {
-		if(failure_delegate != null) 
-			failure_delegate.didFail(this, error);
-	
-	}
-
-	public void didUnlockReward(PHContentView view, PHReward reward) {
-		if (reward_delegate != null) 
-			reward_delegate.unlockedReward(this, reward);
-		
-	}
-
-	public void didMakePurchase(PHContentView view, PHPurchase purchase) {
-		if (purchase_delegate != null) 
-			purchase_delegate.makePurchase(this, purchase);
-		
-	}
-
-	public void didSendSubrequest(JSONObject context, String callback, PHContentView source) {
-		// pass
-	}
-
-	@Override
-	public void didDismiss(PHDismissType type) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public void didFail(String error) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public void didUnlockReward(PHReward reward) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public void didMakePurchase(PHPurchase purchase) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public void didSendSubrequest(JSONObject context, String callbace) {
-		// TODO Auto-generated method stub
-		
-	}	
 }

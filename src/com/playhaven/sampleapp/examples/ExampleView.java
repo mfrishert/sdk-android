@@ -57,6 +57,10 @@ public class ExampleView extends ListActivity {
 		public View getView() {
 			return customView;
 		}
+		
+		public String getContentDescription() {
+			return message;
+		}
 	}
 
 	public boolean bShowPlacementEditText = false;
@@ -100,6 +104,7 @@ public class ExampleView extends ListActivity {
 		});
 		
 		sendBtn.setText(R.string.start_button_text);
+		sendBtn.setContentDescription("startBtn");
 		
 		return sendBtn;
 	}

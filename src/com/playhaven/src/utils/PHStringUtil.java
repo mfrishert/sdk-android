@@ -26,6 +26,20 @@ public class PHStringUtil extends Object {
 		throw new UnsupportedOperationException("This method is not yet implemented");
 	}
 	
+	/// ------------ // For Unit Testing // ---------- ///
+	public static interface UUIDGenerator {
+		public String generateUUID();
+	}
+	
+	private static class DefaultUUIDGenerator implements UUIDGenerator {
+		@Override
+		public String generateUUID() {
+			return UUID.randomUUID().toString();
+		}
+	}
+	
+	public static UUIDGenerator UUID_GENERATOR = new DefaultUUIDGenerator();
+	
 	/** Creates a simple HashMapmapping keys to values from the specified query.*/
 	public static HashMap<String, String> createQueryDict(String query) {
 		if (query == null) return null;
@@ -148,7 +162,7 @@ public class PHStringUtil extends Object {
 		return URLDecoder.decode(in);
 	}
 	
-	private static String hexEncode(byte[] in) {
+	private static String convertToHex(byte[] in) {
 		StringBuilder builder = new StringBuilder(in.length*2);
 		
 		Formatter formatter = new Formatter(builder);
@@ -159,21 +173,22 @@ public class PHStringUtil extends Object {
 		return builder.toString();
 	}
 	
-	/** First encrypts with SHA1 and then spits the result out as a b64 string*/
+	/** First encrypts with SHA1 and then spits the result out as a hex string*/
 	public static String hexDigest(String input) throws NoSuchAlgorithmException, UnsupportedEncodingException {
-		return hexEncode(dataDigest(input));
+		return convertToHex(dataDigest(input));
 	}
 	
+	/** First encrypt with SHA1 then convert to Base64*/
 	public static String base64Digest(String input) throws UnsupportedEncodingException, NoSuchAlgorithmException {
 		
-		String b64digest = base64Encode(dataDigest(input));
+		String b64digest = convertToBase64(dataDigest(input));
 
 		// we trim off last character due to a weird encoding error
 		// Note: check for a solution in the future.
 		return b64digest.substring(0, b64digest.length() - 1);
 	}
 	
-	public static String base64Encode(byte[] in) throws UnsupportedEncodingException {
+	private static String convertToBase64(byte[] in) throws UnsupportedEncodingException {
 		if (in == null) return null;
 		
 		return new String(Base64.encode(in, Base64.URL_SAFE | Base64.NO_PADDING), "UTF8");
@@ -188,7 +203,7 @@ public class PHStringUtil extends Object {
 	
 	/** Generates unique but random UUID*/
 	public static String generateUUID() {
-		return UUID.randomUUID().toString();
+		return UUID_GENERATOR.generateUUID();
 	}
 	
 	/** Encodes unicode characters as HTML entities */

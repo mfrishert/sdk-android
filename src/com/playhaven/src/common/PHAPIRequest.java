@@ -1,21 +1,14 @@
 package com.playhaven.src.common;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.lang.ref.WeakReference;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.Locale;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.FutureTask;
-import java.util.concurrent.ThreadFactory;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -24,6 +17,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.net.Uri;
 
+import com.jakewharton.DiskLruCache;
 import com.playhaven.src.utils.PHStringUtil;
 
 /** 
@@ -52,36 +46,15 @@ public class PHAPIRequest implements PHAsyncRequest.Delegate {
 	
 	private final String SESSION_PREFERENCES = "com_playhaven_sdk_session";
 	
+	// the "subkey" index within each precache entry (we only need 1)
+	public static final Integer PRECACHE_FILE_KEY_INDEX = 0;
+	
+	public final  String API_CACHE_SUBDIR    = "apicache";
+	
+	public final  Integer APP_CACHE_VERSION  = 100;
+	
 	// protected so subclasses can access it. You shouldn't.
 	protected String fullUrl;
-
-    static class LookupService {
-        ExecutorService executor;
-
-        private LookupService() {
-            executor = Executors.newSingleThreadExecutor(new ThreadFactory() {
-                public Thread newThread(Runnable r) {
-                    Thread t = new Thread(r);
-                    t.setDaemon(true);
-                    return t;
-                }
-            });
-        }
-
-        static LookupService create() {
-            return new LookupService();   
-        }
-
-        Future<InetAddress> getByName(final String host) {
-            FutureTask<InetAddress> future = new FutureTask<InetAddress>(new Callable<InetAddress>() {
-                public InetAddress call() throws UnknownHostException {
-                    return InetAddress.getByName(host);
-                }
-            });
-            executor.execute(future);
-            return future;
-        }
-    }
 
 	public static interface Delegate {
 		public void requestSucceeded(PHAPIRequest request, JSONObject responseData);
@@ -97,6 +70,16 @@ public class PHAPIRequest implements PHAsyncRequest.Delegate {
 			synchronized (PHAPIRequest.class) {
 				PHConfig.cacheDeviceInfo(context); // get all relevant device info
 				
+				try {
+				if (DiskLruCache.getSharedDiskCache() == null) // open up the cache if it doesn't exist
+					DiskLruCache.open(new File(context.getCacheDir() + File.separator + API_CACHE_SUBDIR), 
+								      APP_CACHE_VERSION, 
+								      1, 
+								      PHConfig.precache_size);
+				
+				} catch (Exception e) { // swallow all exceptions
+					e.printStackTrace();
+				}
 				
 				preferences = new WeakReference<SharedPreferences>(context.getSharedPreferences(
 																		SESSION_PREFERENCES, 
@@ -162,7 +145,8 @@ public class PHAPIRequest implements PHAsyncRequest.Delegate {
 	}
 	
 	///////////////////////////////////////////////////////
-	/////////////// Generating Signed Parameters //////////
+	//////////
+	///// Generating Signed Parameters //////////
 	
 	/** Creates a base "authed" URL + any addditional parameters (usually from subclass). 
 	 * @throws NoSuchAlgorithmException 
@@ -186,7 +170,8 @@ public class PHAPIRequest implements PHAsyncRequest.Delegate {
 			height, 
 			sdk_platform, 
 			orientation,
-			screen_density;
+			screen_density,
+			connection;
 			
 			device 			= (PHConfig.device_id != null ? PHConfig.device_id : "null");
 			idiom			= String.valueOf(PHConfig.device_size);
@@ -205,24 +190,31 @@ public class PHAPIRequest implements PHAsyncRequest.Delegate {
 															(nonce  != null ? nonce  : ""), 
 															PHConfig.secret);
 			
-			sigHash 		= PHStringUtil	.hexDigest	   (sig);
-			appId 			= PHConfig		.app_package;
-			appVersion 		= PHConfig		.app_version;
-			hardware 		= PHConfig 		.device_model;
-			os 				= String		.format		   ("%s %s", 
+			sigHash         = PHStringUtil	.hexDigest	   (sig);
+			appId           = PHConfig		.app_package;
+			appVersion      = PHConfig		.app_version;
+			hardware        = PHConfig 		.device_model;
+			os              = String		.format		   ("%s %s", 
 															PHConfig.os_name			, 
 													 		PHConfig.os_version			);
 			
-			sdk_version 	= PHConfig		.sdk_version;
-			sdk_platform 	= 				"android";
-			width 			= String		.valueOf	   (PHConfig.screen_size.width  ());
-			height 			= String		.valueOf	   (PHConfig.screen_size.height ());
-			screen_density 	= String		.valueOf	   (PHConfig.screen_density_type  ); 
+			sdk_version     = PHConfig		.sdk_version;
+			sdk_platform    = 				"android";
+			width           = String		.valueOf	   (PHConfig.screen_size.width  ());
+			height          = String		.valueOf	   (PHConfig.screen_size.height ());
+			screen_density  = String		.valueOf	   (PHConfig.screen_density_type  );
+			
+			connection      = ((PHConfig.connection == PHConfig.ConnectionType.NO_PERMISSION) 
+			                                ? null
+			                                : String.valueOf(PHConfig.connection.ordinal()));
 			
 			// decide if we add to existing params.
-			HashMap<String, String> add_params = (getAdditionalParams() != null 
-														? new HashMap<String, String>(getAdditionalParams()) // copy becuase we'll be modifying
-														: new HashMap<String, String>());
+			Hashtable<String, String> additionalParams = getAdditionalParams(); // only call *once* since might have side effects
+			
+			// makek a copy...
+			HashMap<String, String> add_params 		   = (additionalParams != null 
+																	? new HashMap<String, String>(additionalParams)
+																	: new HashMap<String, String>());
 			
 			
 			signedParams = new HashMap<String, String>();
@@ -250,13 +242,21 @@ public class PHAPIRequest implements PHAsyncRequest.Delegate {
 			signedParams.put("orientation", 	orientation);
 			signedParams.put("dpi", 			screen_density);
 			
-			signedParams.put("languages", 		Locale.getDefault().getDisplayLanguage());
+			signedParams.put("languages", 		Locale.getDefault().getLanguage());
+			
+			if (connection != null) 
+				signedParams.put("connection",	connection);
 			
 			add_params.putAll(signedParams);
 			signedParams 	= add_params;
 		}
 		
 		return signedParams;
+	}
+	
+	/** Sets the additional parameters (mostly for testing)*/
+	public void setAdditionalParameters(Hashtable<String, String> params) {
+		this.additionalParams = params;
 	}
 	
 	/** Gets the additional parameters. Declared as an accessor so it can be overrode*/
@@ -302,7 +302,7 @@ public class PHAPIRequest implements PHAsyncRequest.Delegate {
 	}
 	
 	//////////////////////////////////////////////////
-	/////////// Request Type Differences /////////////
+	/////////// Request Detail Differences /////////////
 	/** Gets the request type. This should be overriden by subclasses to control the type of request which gets sent.*/
 	public PHAsyncRequest.RequestType getRequestType() {
 		return PHAsyncRequest.RequestType.Get;
@@ -337,11 +337,11 @@ public class PHAPIRequest implements PHAsyncRequest.Delegate {
 	}
 	
 	/** Appends the endpoint path to the base api url*/
-	protected String createAPIURL(String slug) {
+	public String createAPIURL(String slug) {
 		return PHConfig.api + slug;
 	}
 	
-	/** The base url (or slug) with no parameters attached. */
+	/** The base url (or slug) with no parameters attached. Subclasses should override */
 	public String baseURL() {
 		return urlPath;
 	}
@@ -355,7 +355,7 @@ public class PHAPIRequest implements PHAsyncRequest.Delegate {
 	//////////// Response Handling ///////////////////////
 	
 	/** Override point for subclasses (template pattern) to handle requests*/
-	protected void handleRequestSuccess(JSONObject res) {
+	public void handleRequestSuccess(JSONObject res) {
 		if (delegate == null) return;
 		
 		if(res != null)
@@ -369,25 +369,36 @@ public class PHAPIRequest implements PHAsyncRequest.Delegate {
 	public void processRequestResponse(JSONObject response) {
 		JSONObject res = response.optJSONObject("response");
 		
-		// extensive testing to see if valid..
-		if (!JSONObject.NULL.equals(res) &&
-			!res.equals("") 			 &&
-			res.length() > 0) {
+		// first make sure we actually have a response
+		if (JSONObject.NULL.equals(res) ||
+			res.equals("") 			    ||
+			res.equals("undefined")		  ) {
 			
-			// TODO: actually send crash report
-			try { PHStringUtil.log("Found dictionary for 'response' key in server response: "+res.toString(2)); } catch (JSONException e) { e.printStackTrace(); }
-			
-			handleRequestSuccess(res);
-		} else
 			if (delegate != null)  delegate.requestFailed(this, new JSONException("No 'response' body in JSON payload"));
+			
+			return;
+		}
+		
+		// the response JSON object may be empty
+		// but that often indicates success. We simply pass through.
+		
+		try { PHStringUtil.log("Found dictionary for 'response' key in server response: "+res.toString(2)); } catch (JSONException e) { e.printStackTrace(); }
+			
+		handleRequestSuccess(res);
+			
 	}
 
 	///////////////////////////////////////////////////////////////
 	/////////////// PHAsyncRequest Delegate Methods ///////////////
 	
+	@Override
 	public void requestFinished(ByteBuffer response) {
 		// parse into json
 		try {
+			if (response == null 		|| 
+				response.array() == null  ) 
+				return;
+			
 			String res_str = new String(response.array(), "UTF8");
 			PHStringUtil.log("Unparsed JSON: "+res_str);
 			JSONObject json = new JSONObject(res_str);
@@ -398,7 +409,7 @@ public class PHAPIRequest implements PHAsyncRequest.Delegate {
 			PHCrashReport.reportCrash(e, "PHAPIRequest - requestFinished", PHCrashReport.Urgency.low);
 			
 		} catch (JSONException e) {
-			PHCrashReport.reportCrash(e, "PHAPIRequest - requestFinished", PHCrashReport.Urgency.low);
+			// PHCrashReport.reportCrash(e, "PHAPIRequest - requestFinished", PHCrashReport.Urgency.low);
 			// force us to call the delegate and inform them of the parse error.
 			if (delegate != null) delegate.requestFailed(this, new JSONException("Could not parse JSON: "+e.getMessage()));
 			
@@ -408,21 +419,24 @@ public class PHAPIRequest implements PHAsyncRequest.Delegate {
 		
 	}
 
+	@Override
 	public void requestFailed(Exception e) {
-		PHCrashReport.reportCrash(e, "PHAPIRequest - requestFailed", PHCrashReport.Urgency.low);
+		// PHCrashReport.reportCrash(e, "PHAPIRequest - requestFailed", PHCrashReport.Urgency.low);
 		
 		if (delegate != null) delegate.requestFailed(this, e);
 		
 	}
 
+	@Override
 	public void requestResponseCode(int responseCode) {
 		PHStringUtil.log("Received response code: "+responseCode);
 		
 		if(delegate != null && responseCode != 200)
-			delegate.requestFailed(this, new IOException("API Request failed with code: "+responseCode));
+			delegate.requestFailed(this, new IOException("API Request failed with code: " + responseCode));
 		
 	}
 
+	@Override
 	public void requestProgressUpdate(int progress) {
 		// pass	
 	}
