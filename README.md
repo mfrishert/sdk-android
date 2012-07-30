@@ -222,11 +222,11 @@ When working with the multiple delegates in `PHPublisherContentRequest`:
 
 ```java
 PHPublisherContentRequest request = new PHPublisherContentRequest([your context (usually Activity)], "your placement");
-request.content_delegate = [your customize delegate];
-request.customize_delegate = [your customize delegate];
-request.failure_delegate = [your failure delegate];
-request.reward_delegate = [your reward delegate];
-request.purchase_delegate = [your purchase delegate]
+request.setOnFailureListener([your failure delegate]);
+request.setOnCustomizeListener([your customize delegate]);
+request.setOnContentListener([your reward delegate]);
+request.setOnContentListener([your content delegate]);
+request.setOnPurchaseListener([your purchase delegate]);
 request.send();
 ```
 
