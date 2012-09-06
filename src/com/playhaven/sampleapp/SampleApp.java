@@ -19,6 +19,7 @@ import com.playhaven.sampleapp.examples.PublisherContentView;
 import com.playhaven.sampleapp.examples.PublisherIAPView;
 import com.playhaven.sampleapp.examples.PublisherOpenView;
 import com.playhaven.src.common.PHConfig;
+import com.playhaven.src.common.PHSession;
 
 public class SampleApp extends ListActivity {
 	public static enum Pref {
@@ -90,13 +91,7 @@ public class SampleApp extends ListActivity {
         super.onCreate(savedInstanceState);
         
         setTitle("Playhaven SDK: " + PHConfig.sdk_version);
-       
-        // TODO: debugging only, we set to some production keys
-    	
-    	setCredentials("http://api2.playhaven.com", 
-    				   "7891be9f735246a79437e61fea0a858a", 
-    				   "45cf7b88f4ed48349ee254ed642355ca");
-    	
+        
         createDemoRequests();
         
         addPreferencesButton();
@@ -153,6 +148,7 @@ public class SampleApp extends ListActivity {
 		PHConfig.token  = prefs.getString(Pref.Token.getKey(), 		null);
 		PHConfig.secret = prefs.getString(Pref.Secret.getKey(), 	null);
 		PHConfig.api    = prefs.getString(Pref.Server.getKey(), 	null);
+		PHConfig.precache = true;
         
 		Intent intent = new Intent(this, cls);
 		startActivity(intent);
@@ -166,4 +162,17 @@ public class SampleApp extends ListActivity {
         requests.add(new DemoRequest("IAP", "/publisher/iap/", 			"iapRequest"));
 
     }
+    
+    @Override
+    protected void onResume() {
+        super.onResume();
+        PHSession.register(this);
+    }
+    
+    @Override
+    protected void onPause() {
+        super.onPause();
+        PHSession.unregister(this);
+    }
+    
 }

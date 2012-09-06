@@ -32,8 +32,16 @@ public class PHReward implements Parcelable {
 	
 	public PHReward(Parcel in) {
 		this.name = in.readString();
+		
+		if (this.name != null && this.name.equals(PHContent.PARCEL_NULL))
+			this.name = null;
+		
 		this.quantity = in.readInt();
+		
 		this.receipt = in.readString();
+		
+		if (this.receipt != null && this.receipt.equals(PHContent.PARCEL_NULL))
+			this.receipt = null;
 	}
 	
 	public int describeContents() {
@@ -41,8 +49,8 @@ public class PHReward implements Parcelable {
 	}
 	
 	public void writeToParcel(Parcel out, int flags) {
-		out.writeString(name);
+		out.writeString(name == null ? PHContent.PARCEL_NULL : name);
 		out.writeInt(quantity);
-		out.writeString(receipt);
+		out.writeString(receipt == null ? PHContent.PARCEL_NULL : receipt);
 	}
 }

@@ -355,8 +355,13 @@ public class PHContentView extends Activity implements PHURLLoader.Delegate,
 	private boolean loadPrecachedIfExists(String url) {
 		if ( ! url.startsWith("http://")) return false;
 		
+		if ( ! PHConfig.precache) return false;
+		
+		if (DiskLruCache.getSharedDiskCache() == null) return false;
+		
 		PHStringUtil.log("Loading precached version of '" + url + "'");
 		try {
+		    
 			DiskLruCache.Snapshot precached_snapshot = DiskLruCache.getSharedDiskCache().get(url);
 			
 			// if we are trying to load a web page and we have a cached version, serve it up!
@@ -628,19 +633,23 @@ public class PHContentView extends Activity implements PHURLLoader.Delegate,
 
 	@Override
 	protected void onPause() {
-		super.onPause();
-		
-//		try {
-			// TODO: enable this
-			//TODO: not sure if this is the right place to put it? Can close too quickly...
-//			if (DiskLruCache.getSharedDiskCache() != null)
-//				DiskLruCache.getSharedDiskCache().close();
-//		} catch (IOException e) {
-//			e.printStackTrace();
-//		}
-		
-		PHPublisherContentRequest.dismissedContent(); // log that PHContentView is no longer visible
+	    super.onPause();
+	    
+	    PHPublisherContentRequest.dismissedContent(); // log that PHContentView is no longer visible
 	}
+	
+    @Override
+    protected void onStop() {
+        super.onStop();
+        
+        try {
+            if (PHConfig.precache && DiskLruCache.getSharedDiskCache() != null) {
+                DiskLruCache.getSharedDiskCache().close();
+            }
+        } catch (IOException e) {
+            PHCrashReport.reportCrash(e, "PHContentView - onStop", PHCrashReport.Urgency.critical);
+        }
+    }
 	
 	@Override
 	protected void onDestroy() {
@@ -861,6 +870,15 @@ public class PHContentView extends Activity implements PHURLLoader.Delegate,
 	@Override
 	public void onStart() {
 		super.onStart();
+		
+		try {
+            if (PHConfig.precache && DiskLruCache.getSharedDiskCache() != null) {
+                DiskLruCache.getSharedDiskCache().open();
+            }
+        } catch (IOException e) {
+            PHCrashReport.reportCrash(e, "PHContentView - onStart", PHCrashReport.Urgency.critical);
+        }
+		
 		try {
 		rootView = new RelativeLayout(getApplicationContext());
 		
@@ -1055,6 +1073,9 @@ public class PHContentView extends Activity implements PHURLLoader.Delegate,
 
 	public boolean validateReward(JSONObject data) throws NoSuchAlgorithmException, 
 														  UnsupportedEncodingException {
+		
+		if (JSONObject.NULL.equals(data) || data.length() == 0) return false;
+		
 		String reward 			= data.optString(Reward.IDKey.			key(), "");
 		String quantity 		= data.optString(Reward.QuantityKey.	key(), "");
 		String receipt 			= data.optString(Reward.ReceiptKey.	key(), "");
@@ -1081,8 +1102,7 @@ public class PHContentView extends Activity implements PHURLLoader.Delegate,
 	
 	public boolean validatePurchase(JSONObject data) throws NoSuchAlgorithmException, 
 															UnsupportedEncodingException {
-		if (data == null)
-			return false;
+		if (JSONObject.NULL.equals(data) || data.length() == 0) return false;
 
 		String productID 		  = data.optString(Purchase.ProductIDKey.	key(), "");
 		String name 			  = data.optString(Purchase.NameKey.	  	key(), "");
@@ -1109,6 +1129,8 @@ public class PHContentView extends Activity implements PHURLLoader.Delegate,
 	/////////// *Sub* request delegate /////////////
 
 	public void requestSucceeded(PHAPIRequest request, JSONObject responseData) {
+		if (responseData.length() == 0) return;
+		
 		try {
 		PHContent content = new PHContent(responseData);
 		
@@ -1154,6 +1176,8 @@ public class PHContentView extends Activity implements PHURLLoader.Delegate,
 
 	public void requestFailed(PHAPIRequest request, Exception e) {
 		try {
+			if (request == null) return;
+			
 			JSONObject error = new JSONObject();
 			error.putOpt("error", "1");
 			PHPublisherSubContentRequest sub_request = (PHPublisherSubContentRequest) request;
@@ -1256,8 +1280,7 @@ public class PHContentView extends Activity implements PHURLLoader.Delegate,
 			
 			JSONObject reward = rewards.optJSONObject(i);
 
-			if ( ! JSONObject.NULL.equals(reward) && 
-				   validateReward(reward)		    ) {
+			if (validateReward(reward)) {
 
 				PHReward r  = new PHReward();
 				
@@ -1296,8 +1319,7 @@ public class PHContentView extends Activity implements PHURLLoader.Delegate,
 			
 			JSONObject purchase = purchases.optJSONObject(i);
 	
-			if ( ! JSONObject.NULL.equals(purchase) &&
-				   validatePurchase(purchase)		  ) {
+			if (validatePurchase(purchase)) {
 				
 				PHPurchase p 	= new PHPurchase(PURCHASE_CALLBACK_INTENT + this.tag); // pass in an intent callback
 				p.product 		= purchase.optString	(Purchase.ProductIDKey	.key(), "");

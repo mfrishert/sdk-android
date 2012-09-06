@@ -9,7 +9,7 @@ import com.playhaven.src.common.PHConfig.ConnectionType;
 
 /**
  * Simply utility class for fetching the network state
- * @author samstewart
+ * @author samstewart, andreiciortea
  *
  */
 public class PHConnectionManager {

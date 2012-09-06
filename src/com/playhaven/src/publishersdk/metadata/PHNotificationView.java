@@ -33,16 +33,39 @@ public class PHNotificationView extends View implements PHAPIRequest.Delegate {
 	
 	private PHPublisherMetadataRequest request;
 	
+	private String placement;
+	
+	
 	public PHNotificationView(Context context, String placement) {
 		super(context);
-		request = new PHPublisherMetadataRequest(context, this, placement);
+		this.placement = placement;
 	}
 	
 	///////////////////////////////////////////////////////////
 	
+	public String getPlacement() {
+		return placement;
+	}
+	
+	public PHPublisherMetadataRequest getRequest() {
+		return request;
+	}
+	
+	public JSONObject getNotificationData() {
+		return notificationData;
+	}
+	
+	public PHNotificationRenderer getNotificationRenderer() {
+		return notificationRenderer;
+	}
+	
+	public static HashMap<String, Class> getRenderMap() {
+		return renderMap;
+	}
+	
+	///////////////////////////////////////////////////////////
 	public void refresh() {
-		if (request != null) return;
-		
+		request = new PHPublisherMetadataRequest(getContext(), this, placement);
 		
 		request.send();
 	}
@@ -53,7 +76,7 @@ public class PHNotificationView extends View implements PHAPIRequest.Delegate {
 	}
 
 	/** Should call this method to update the view, renderer, etc when notification data changes. */
-	private void updateNotificationData(JSONObject data) {
+	public void updateNotificationData(JSONObject data) {
 		if (data == null) return;
 		
 		try {
@@ -86,9 +109,10 @@ public class PHNotificationView extends View implements PHAPIRequest.Delegate {
 			renderer = (PHNotificationRenderer)render_class.getConstructor(Resources.class).newInstance(getContext().getResources());
 		} catch (Exception e) {
 			PHCrashReport.reportCrash(e, "PHNotificationView - createRenderer", PHCrashReport.Urgency.critical);
+			renderer = null;
 		}
 		
-		PHStringUtil.log("Created subclass of PHNotificationRenderer of type: "+type);
+		PHStringUtil.log("Created subclass of PHNotificationRenderer of type: " + type);
 		return renderer;
 		
 	}
@@ -120,6 +144,7 @@ public class PHNotificationView extends View implements PHAPIRequest.Delegate {
 			PHCrashReport.reportCrash(e, "PHNotificationView - onDraw", PHCrashReport.Urgency.critical);
 		}
 	}
+	
 	@Override
 	protected void onMeasure(int widthSpec, int heightSpec) {
 		try {

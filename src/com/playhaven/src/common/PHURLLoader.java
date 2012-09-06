@@ -80,6 +80,24 @@ public class PHURLLoader implements PHAsyncRequest.Delegate {
 	}
 	
 	///////////////////////////////////////////////////////////
+	////////////// Mostly Utilized by Unit Tests //////////////
+	public ProgressDialog getDialog() {
+		return progressDialog;
+	}
+	
+	public void setProgressDialog(ProgressDialog dialog) {
+		this.progressDialog = dialog;
+	}
+	
+	public PHAsyncRequest getConnection() {
+		return conn;
+	}
+	
+	public void setConnection(PHAsyncRequest conn) {
+		this.conn = conn;
+	}
+	
+	///////////////////////////////////////////////////////////
 	
 	public void setTargetURL(String url) {
 		this.targetURL = url;
@@ -91,12 +109,22 @@ public class PHURLLoader implements PHAsyncRequest.Delegate {
 	///////////////////////////////////////////////////////////
 	///////////////// Management Methods //////////////////////
 	
+	@SuppressWarnings("unchecked")
 	public static void invalidateLoaders(Delegate delegate) {
-		for (PHURLLoader loader : allLoaders) {
+		// We make a copy to prevent a ConcurrentModificationException
+		LinkedHashSet<PHURLLoader> allLoadersCopy = (LinkedHashSet<PHURLLoader>) allLoaders.clone();
+		
+		for (PHURLLoader loader : allLoadersCopy) {
 			if (loader.delegate == delegate) {
+				
+				// the loader will remove itself from the 'allLoaders' array
 				loader.invalidate();
 			}
 		}
+	}
+	
+	public static LinkedHashSet<PHURLLoader> getAllLoaders() {
+		return allLoaders;
 	}
 	
 	public static void removeLoader(PHURLLoader loader) {
@@ -105,9 +133,6 @@ public class PHURLLoader implements PHAsyncRequest.Delegate {
 	
 	public static void addLoader(PHURLLoader loader) {
 		allLoaders.add(loader);
-	}
-	public static void openDeviceURL(String url) {
-		//TODO: open device url though not currently used by iOS SDK?
 	}
 	
 	///////////////////////////////////////////////////////////
@@ -226,17 +251,8 @@ public class PHURLLoader implements PHAsyncRequest.Delegate {
 	////////////////////////////////////////////////////
 	/////// PHAsyncRequest delegate methods ////////////
 	
-	public void requestFinished(ByteBuffer response) {
-		// we can call this because it won't run if it's already been called.
-		finish();
-	}
-
-	public void requestFailed(Exception e) {
-		PHStringUtil.log("PHURLLoader failed with error: "+e);
-		fail();
-	}
-
-	public void requestResponseCode(int responseCode) {
+	@Override
+	public void requestFinished(ByteBuffer response, int responseCode) {
 		if(responseCode < 300) {
 			PHStringUtil.log("PHURLLoader finishing from initial url: " + targetURL);
 			finish();
@@ -246,8 +262,11 @@ public class PHURLLoader implements PHAsyncRequest.Delegate {
 		}
 	}
 
-	public void requestProgressUpdate(int progress) {
-		// TODO ignore progress updates..
+	@Override
+	public void requestFailed(Exception e) {
+		PHStringUtil.log("PHURLLoader failed with error: "+e);
+		fail();
 	}
+
 
 }

@@ -16,10 +16,10 @@ import android.content.IntentFilter;
 import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
 import android.os.Bundle;
-import android.os.SystemClock;
 
 import com.playhaven.src.common.PHAPIRequest;
 import com.playhaven.src.common.PHCrashReport;
+import com.playhaven.src.common.PHSession;
 import com.playhaven.src.publishersdk.content.PHContentView.ButtonState;
 import com.playhaven.src.utils.PHStringUtil;
 
@@ -56,14 +56,12 @@ public class PHPublisherContentRequest extends PHAPIRequest{
 	public enum PHDismissType {
 		ContentUnitTriggered, // content template dismissal
 		CloseButtonTriggered, // called from close button
-		ApplicationTriggered, //application state 
+		ApplicationTriggered, //application currentState 
 		NoContentTriggered    // Usually on error
 	};
 	
-	private PHRequestState state;
+	private PHRequestState currentState;
 	
-	//private BroadcastReceiver contentBroadcastReceiver = null;
-
 	private PHRequestState targetState;
 	
 	/** Big ol' extra delegate methods that a delegate can implement for more detail. {@link PHPublisherContentRequest} will work just
@@ -131,29 +129,36 @@ public class PHPublisherContentRequest extends PHAPIRequest{
 	private static ConcurrentLinkedQueue<Long> dismissedStamps = new ConcurrentLinkedQueue<Long>(); // time stamps for dismissal
 	
 	/** Checks to see if we have dismissed a content view within
-	 * the given number of milliseconds.
-	 * @return
+	 * the given number of milliseconds. 
+	 * 
+	 * <strong><em>Important</em></strong>: This method removes all previous dismiss stamps.
+	 * Hence, repeat calls of this method are not useful without an intervening call to dismissedContent().
+	 * @return whether or not a content view was dismissed within the number of milliseconds specified
 	 */
 	public static boolean didDismissContentWithin(long range) {
 		
-		long curTime = SystemClock.uptimeMillis();
-		long stampTime = 0;
+		long curTime = System.currentTimeMillis();
+		long stampTime = 0; // start with the "oldest" conceivable value
 		
-		// start at the oldest and throw out any which are too old
+		// start at the oldest and throw out any which are too old.
+		// The oldest stamps are guaranteed to be at the head of the queue. This property is key.
+		// We know that if the current stamp is within range, then a newer stamp must also be in range.
+		// We will end up with the most recent timestamp because of this ordering.
 		while (curTime - stampTime > range && dismissedStamps.size() > 0) {
 			stampTime = dismissedStamps.poll();
 		}
 		
+		// all of the stamps may be too old, let's check
 		return (curTime - stampTime <= range ? true : false);
 	}
 	
 	/** Utility method for PHContentView to log a dismiss*/
 	public static void dismissedContent() {
-		dismissedStamps.add(SystemClock.uptimeMillis());
+		dismissedStamps.add(System.currentTimeMillis());
 	}
 	
 	/** Set the different content request delegates using the sneaky 'instanceof' operator. It's a bit hacky but works for our purposes.*/
-	private void setDelegates(Object delegate) {
+	public void setDelegates(Object delegate) {
 		
 		if (delegate instanceof RewardDelegate)
 			reward_listener = (RewardDelegate)delegate;
@@ -203,7 +208,7 @@ public class PHPublisherContentRequest extends PHAPIRequest{
 		
 		registerReceiver();
 		
-		setState(PHRequestState.Initialized);
+		setCurrentState(PHRequestState.Initialized);
 	}
 	
 	public PHPublisherContentRequest(Activity activity, ContentDelegate delegate, String placement) {
@@ -222,20 +227,31 @@ public class PHPublisherContentRequest extends PHAPIRequest{
 		this.showsOverlayImmediately = doOverlay;
 	}
 	
-	public void setState(PHRequestState state) {
+	public void setCurrentState(PHRequestState state) {
 	    if (state      == null) return;
-		if (this.state == null) this.state = state; //guard against null edge case..
+		if (this.currentState == null) this.currentState = state; //guard against null edge case..
 		
-		//only set state ahead! (if set above, will just ignore)
-		if (state.ordinal() > this.state.ordinal()) {
-			this.state = state;
+		// only set currentState forward in time! (if set above, will just ignore)
+		if (state.ordinal() > this.currentState.ordinal()) {
+			this.currentState = state;
 		}
 	}
 	
-	public PHRequestState getState() {
-		return state;
+	public PHRequestState getCurrentState() {
+		return currentState;
 	}
 	
+	public PHRequestState getTargetState() {
+		return targetState;
+	}
+	
+	public PHContent getContent() {
+		return content;
+	}
+	
+	public void setTargetState(PHRequestState targetState) {
+		this.targetState = targetState;
+	}
 	
 	/////////////////////////////////////////////////
 	/////////////////////////////////////////////////
@@ -246,9 +262,10 @@ public class PHPublisherContentRequest extends PHAPIRequest{
 	}
 	
 	private void loadContent() {
-		setState(PHRequestState.Preloading);
+		setCurrentState(PHRequestState.Preloading);
 		super.send(); // now actually send the request
 		
+		// order is important here! We need to kick off the background task first
 		if(content_listener != null)
 			content_listener.willGetContent(this);
 
@@ -260,7 +277,8 @@ public class PHPublisherContentRequest extends PHAPIRequest{
 			if (content_listener != null)
 				content_listener.willDisplayContent(this, content);
 			
-			setState(PHRequestState.DisplayingContent);
+			// the currentState might have been 'Done'
+			setCurrentState(PHRequestState.DisplayingContent);
 			
 			BitmapDrawable inactive = null;
 			BitmapDrawable active = null;
@@ -285,12 +303,14 @@ public class PHPublisherContentRequest extends PHAPIRequest{
 	}
 	
 	private void continueLoading() {
-		switch (state) {
+		switch (currentState) {
 			case Initialized:
 				loadContent();
 				break;
 			case Preloaded:
 				showContent();
+				break;
+			default:
 				break;
 		}
 	}
@@ -316,7 +336,7 @@ public class PHPublisherContentRequest extends PHAPIRequest{
 	
 	@Override
 	public void finish() {
-		setState(PHRequestState.Done);
+		setCurrentState(PHRequestState.Done);
 		
 		super.finish();
 	}
@@ -330,15 +350,24 @@ public class PHPublisherContentRequest extends PHAPIRequest{
 		
 		table.put("placement_id", (placement != null ? placement : ""));
 		table.put("preload", (targetState == PHRequestState.Preloaded ? "1" : "0"));
+
+		PHSession session = PHSession.getInstance(activityContext.get());
+		table.put("stime", String.valueOf(session.getSessionTime()));
 	
 		return table;
 	}
 	
 	@Override
 	public void handleRequestSuccess(JSONObject response) {
+	    if (JSONObject.NULL.equals(response) || response.length() == 0) return;
+	    
 		content = new PHContent(response);
 		
-		setState(PHRequestState.Preloaded);
+		if (content.url == null) {
+		    setCurrentState(PHRequestState.Done);
+		} else {
+		    setCurrentState(PHRequestState.Preloaded);
+		}
 		
 		continueLoading();
 	}

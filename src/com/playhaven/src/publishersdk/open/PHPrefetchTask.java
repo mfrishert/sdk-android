@@ -21,9 +21,11 @@ public class PHPrefetchTask extends AsyncTask<Integer, Integer, Integer> {
 		public void prefetchDone(int result);
 	}
 	
-	private URL url;
+	public URL url;
 	
 	public Listener listener;
+	
+	private DiskLruCache cache;
 	
 	///////////////////////////////////////////
 	//////////////// Accessors ///////////////
@@ -31,13 +33,33 @@ public class PHPrefetchTask extends AsyncTask<Integer, Integer, Integer> {
 		this.listener = listener;
 	}
 	
+	public Listener getOnPrefetchDoneListener() {
+		return listener;
+	}
+	
+	public URL getURL() {
+		return url;
+	}
+	
 	public void setURL(String url) {
+		
 		try {
 			this.url = new URL(url);
 		} catch (MalformedURLException e) {
 			this.url = null;
-			PHCrashReport.reportCrash(e, "PHPrefetchTask - setURL", PHCrashReport.Urgency.low);
+			PHStringUtil.log("Malformed URL in PHPrefetchTask: " + url);
 		}
+	}
+	
+	public void setCache(DiskLruCache cache) {
+		this.cache = cache;
+	}
+	
+	public DiskLruCache getCache() {
+		if (cache == null)
+			cache = DiskLruCache.getSharedDiskCache();
+		// TODO: what if it is null again???
+		return cache;
 	}
 	
 	@Override
@@ -46,37 +68,39 @@ public class PHPrefetchTask extends AsyncTask<Integer, Integer, Integer> {
 		
 		int responseCode = HttpURLConnection.HTTP_BAD_REQUEST;
 		
+		// Note: while HttpURLConnection might be simpler, we use the Apache
+		// libraries for easier testing with Robolectric
 		try {
 			synchronized (this) {
-				// Note: we ignore the input dummy variables since we use URL
-				if (url == null) return HttpURLConnection.HTTP_BAD_REQUEST;
-				
-				HttpURLConnection urlConn = (HttpURLConnection) url.openConnection();
-				responseCode = urlConn.getResponseCode();
-				
-				BufferedInputStream in = new BufferedInputStream(urlConn.getInputStream());
-				
-				// dump to local cache
-				DiskLruCache.Editor editor = DiskLruCache.getSharedDiskCache().edit(url.toString());
-				
-				// open a new handle to a cached file
-				BufferedOutputStream cachedFile = new BufferedOutputStream(editor.newOutputStream(PHAPIRequest.PRECACHE_FILE_KEY_INDEX));
-				
-				// transfer to cache file
-				byte[] buffer = new byte[BUFFER_SIZE];
-				while (in.read(buffer) != -1) {
-					cachedFile.write(buffer);
-				}
-				
-				in.close();
-				cachedFile.flush();
-				cachedFile.close();
-				
-				editor.commit();
-				
-				urlConn.disconnect();
-				
-				DiskLruCache.getSharedDiskCache().flush();
+                // Note: we ignore the input dummy variables since we use URL
+                if (url == null) return HttpURLConnection.HTTP_BAD_REQUEST;
+                
+                HttpURLConnection urlConn = (HttpURLConnection) url.openConnection();
+                responseCode = urlConn.getResponseCode();
+                
+                BufferedInputStream in = new BufferedInputStream(urlConn.getInputStream());
+                
+                // dump to local cache
+                DiskLruCache.Editor editor = getCache().edit(url.toString());
+                
+                // open a new handle to a cached file
+                BufferedOutputStream cachedFile = new BufferedOutputStream(editor.newOutputStream(PHAPIRequest.PRECACHE_FILE_KEY_INDEX));
+                
+                // transfer to cache file
+                byte[] buffer = new byte[BUFFER_SIZE];
+                while (in.read(buffer) != -1) {
+                    cachedFile.write(buffer);
+                }
+                
+                in.close();
+                cachedFile.flush();
+                cachedFile.close();
+                
+                editor.commit();
+                
+                urlConn.disconnect();
+                
+                getCache().flush();
 			}
 		} catch (Exception e) { // swallow all exceptions
 			PHCrashReport.reportCrash(e, "PHPrefetchTask - doInBackground", PHCrashReport.Urgency.low);
@@ -90,18 +114,18 @@ public class PHPrefetchTask extends AsyncTask<Integer, Integer, Integer> {
 	 * @see http://android-developers.blogspot.com/2011/09/androids-http-clients.html
 	 */
 	private void disableConnectionReuseIfNecessary() {
-		if (Integer.parseInt(Build.VERSION.SDK) < Build.VERSION_CODES.FROYO)
+		if (Build.VERSION.SDK_INT < Build.VERSION_CODES.FROYO)
 	        System.setProperty("http.keepAlive", "false");
 	}
 	
 	@Override
 	protected void onProgressUpdate(Integer... progress) {
-		PHStringUtil.log("Progress update in prefetch operation!");
+		PHStringUtil.log("Progress update in prefetch operation: " + progress);
 	}
 	
 	@Override
 	protected void onPostExecute(Integer result) {
-		PHStringUtil.log("Prefetched finished with: " + result);
+		PHStringUtil.log("Pre-fetch finished with response code: " + result);
 		
 		// don't catch exceptions from listener
 		if (listener != null) listener.prefetchDone(result);

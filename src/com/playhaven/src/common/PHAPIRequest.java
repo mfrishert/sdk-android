@@ -1,6 +1,5 @@
 package com.playhaven.src.common;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.lang.ref.WeakReference;
@@ -17,7 +16,6 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.net.Uri;
 
-import com.jakewharton.DiskLruCache;
 import com.playhaven.src.utils.PHStringUtil;
 
 /** 
@@ -39,9 +37,7 @@ public class PHAPIRequest implements PHAsyncRequest.Delegate {
 	private String urlPath;
 	
 	private int requestTag;
-	
-	private static String session = "";
-	
+		
 	private static WeakReference<SharedPreferences> preferences;
 	
 	private final String SESSION_PREFERENCES = "com_playhaven_sdk_session";
@@ -49,9 +45,9 @@ public class PHAPIRequest implements PHAsyncRequest.Delegate {
 	// the "subkey" index within each precache entry (we only need 1)
 	public static final Integer PRECACHE_FILE_KEY_INDEX = 0;
 	
-	public final  String API_CACHE_SUBDIR    = "apicache";
+	public static final String API_CACHE_SUBDIR    = "apicache";
 	
-	public final  Integer APP_CACHE_VERSION  = 100;
+	public static final Integer APP_CACHE_VERSION  = 100;
 	
 	// protected so subclasses can access it. You shouldn't.
 	protected String fullUrl;
@@ -69,17 +65,6 @@ public class PHAPIRequest implements PHAsyncRequest.Delegate {
 		if (context != null) {
 			synchronized (PHAPIRequest.class) {
 				PHConfig.cacheDeviceInfo(context); // get all relevant device info
-				
-				try {
-				if (DiskLruCache.getSharedDiskCache() == null) // open up the cache if it doesn't exist
-					DiskLruCache.open(new File(context.getCacheDir() + File.separator + API_CACHE_SUBDIR), 
-								      APP_CACHE_VERSION, 
-								      1, 
-								      PHConfig.precache_size);
-				
-				} catch (Exception e) { // swallow all exceptions
-					e.printStackTrace();
-				}
 				
 				preferences = new WeakReference<SharedPreferences>(context.getSharedPreferences(
 																		SESSION_PREFERENCES, 
@@ -108,30 +93,9 @@ public class PHAPIRequest implements PHAsyncRequest.Delegate {
 	}
 	
 	///////////////////////////////////////////////
-	public static void setSession(String session) {
-		if (session == null) return;
-		
-		synchronized (PHAPIRequest.class) {
-			PHAPIRequest.session = session;
-			
-			if (preferences.get() != null) {
-				SharedPreferences.Editor editor = preferences.get().edit();
-				editor.putString("session", session);
-					
-				editor.commit();
-			}
-				
-		}
-	}
 	
-	public static String getSession() {
-		synchronized (PHAPIRequest.class) {
-			if (PHAPIRequest.session == null) PHAPIRequest.session = "";
-			
-			if (PHAPIRequest.preferences.get() != null) PHAPIRequest.session = PHAPIRequest.preferences.get().getString("session", "");
-		}
-		
-		return PHAPIRequest.session;
+	public PHAsyncRequest getConnection() {
+		return conn;
 	}
 	
 	///////////////////////////////////////////////
@@ -275,7 +239,12 @@ public class PHAPIRequest implements PHAsyncRequest.Delegate {
 	
 	public void send() {
 		conn = new PHAsyncRequest(this);
-			
+		
+		if (PHConfig.username != null && PHConfig.password != null) { 
+			conn.setUsername(PHConfig.username);
+			conn.setPassword(PHConfig.password);
+		}
+		
 		conn.request_type = getRequestType();
 			
 		send(conn);	
@@ -361,46 +330,54 @@ public class PHAPIRequest implements PHAsyncRequest.Delegate {
 		if(res != null)
 			delegate.requestSucceeded(this, res);
 		else 
-			delegate.requestFailed(this, new JSONException("Couldn't parse json"));
+			requestFailed(new JSONException("Couldn't parse json"));
 		
 	}
 	
-	/** Processes response. Broken into its own method to make the code more readable.*/
+	/** Processes response. Broken into its own method to make the code more readable (and testable).*/
 	public void processRequestResponse(JSONObject response) {
-		JSONObject res = response.optJSONObject("response");
+		String errmsg 	  = response.optString("error");
+		JSONObject errobj = response.optJSONObject("errobj");
 		
-		// first make sure we actually have a response
-		if (JSONObject.NULL.equals(res) ||
-			res.equals("") 			    ||
-			res.equals("undefined")		  ) {
-			
-			if (delegate != null)  delegate.requestFailed(this, new JSONException("No 'response' body in JSON payload"));
-			
+		// decide if there is an error
+		if ((! JSONObject.NULL.equals(errobj) && errobj.length() > 0) || (! response.isNull("error") && errmsg.length() > 0)) {		
+			requestFailed(new Exception("Request failed with error: " + errmsg));
 			return;
 		}
 		
-		// the response JSON object may be empty
-		// but that often indicates success. We simply pass through.
+		JSONObject res = response.optJSONObject("response");
 		
-		try { PHStringUtil.log("Found dictionary for 'response' key in server response: "+res.toString(2)); } catch (JSONException e) { e.printStackTrace(); }
-			
+		if (JSONObject.NULL.equals(res) || res.equals("") || res.equals("undefined") || res.length() == 0) {
+			// no response body so do not parse any further.
+			// The request was successful but simply had no content
+			res = new JSONObject();
+		}
+		
+		// if all the above conditions pass, we actually handle the request
 		handleRequestSuccess(res);
-			
 	}
 
 	///////////////////////////////////////////////////////////////
 	/////////////// PHAsyncRequest Delegate Methods ///////////////
 	
 	@Override
-	public void requestFinished(ByteBuffer response) {
+	public void requestFinished(ByteBuffer response, int responseCode) {
+		PHStringUtil.log("Received response code: " + responseCode);
+		
+		if(responseCode != 200) {
+			requestFailed(new IOException("Request failed with code: " + responseCode));
+			return;
+		}
+		
+		if (response == null || response.array() == null) 
+			return;
+		
 		// parse into json
 		try {
-			if (response == null 		|| 
-				response.array() == null  ) 
-				return;
 			
 			String res_str = new String(response.array(), "UTF8");
 			PHStringUtil.log("Unparsed JSON: "+res_str);
+			
 			JSONObject json = new JSONObject(res_str);
 			
 			processRequestResponse(json);
@@ -409,9 +386,8 @@ public class PHAPIRequest implements PHAsyncRequest.Delegate {
 			PHCrashReport.reportCrash(e, "PHAPIRequest - requestFinished", PHCrashReport.Urgency.low);
 			
 		} catch (JSONException e) {
-			// PHCrashReport.reportCrash(e, "PHAPIRequest - requestFinished", PHCrashReport.Urgency.low);
 			// force us to call the delegate and inform them of the parse error.
-			if (delegate != null) delegate.requestFailed(this, new JSONException("Could not parse JSON: "+e.getMessage()));
+			requestFailed(new JSONException("Could not parse JSON: " + e.getMessage()));
 			
 		} catch (Exception e) { // swallow all exceptions
 			PHCrashReport.reportCrash(e, "PHAPIRequest - requestFinished", PHCrashReport.Urgency.critical);
@@ -425,20 +401,6 @@ public class PHAPIRequest implements PHAsyncRequest.Delegate {
 		
 		if (delegate != null) delegate.requestFailed(this, e);
 		
-	}
-
-	@Override
-	public void requestResponseCode(int responseCode) {
-		PHStringUtil.log("Received response code: "+responseCode);
-		
-		if(delegate != null && responseCode != 200)
-			delegate.requestFailed(this, new IOException("API Request failed with code: " + responseCode));
-		
-	}
-
-	@Override
-	public void requestProgressUpdate(int progress) {
-		// pass	
 	}
 
 

@@ -47,6 +47,10 @@ public class PHConfig {
 	
 	public static String api		 = "";
 	
+	public static String username	 = null;
+	
+	public static String password	 = null;
+	
 	public static float  screen_density;
 	
 	public static int 	 protocol   = -1;
@@ -73,10 +77,11 @@ public class PHConfig {
 	
 	public static int	  precache_size = 1024 * 1024 * 8;
 	
-	public static boolean precache 			   = false;
+	public static boolean precache 			   = true;
 	
 	public static boolean runningTests		   = false;
 	
+	public static String environment = "prod";
 	
 	public static enum ConnectionType {
 	    NO_NETWORK,
@@ -131,15 +136,14 @@ public class PHConfig {
 		
 	}
 	
-	// environment for testing (defaults to prod)
-	public static String environment = "prod";
+	
 	
 	// string blob of JSON which we can change from build scripts  (see ant filtertask)
 	public static final String JSON_CONFIG = 
 						"{\n" + 
 						"   \"prod\":{\n" + 
 						"      \"api\":\"http://api2.playhaven.com\",\n" + 
-						"      \"precache\":false,\n" + 
+						"      \"precache\":true,\n" + 
 						"      \"protocol\":4,\n" + 
 						"      \"urgency_level\":\"low\"\n" + 
 						"   },\n" + 

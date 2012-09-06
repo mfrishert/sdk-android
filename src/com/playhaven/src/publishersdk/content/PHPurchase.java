@@ -1,8 +1,5 @@
 package com.playhaven.src.publishersdk.content;
 
-import org.json.JSONException;
-import org.json.JSONObject;
-
 import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
@@ -97,11 +94,32 @@ public class PHPurchase implements Parcelable {
 	
 	public PHPurchase(Parcel in) {
 		this.product 			= in.readString();
+		
+		if (this.product != null && this.product.equals(PHContent.PARCEL_NULL))
+			this.product = null;
+		
 		this.name 				= in.readString();
+		
+		if (this.name != null && this.name.equals(PHContent.PARCEL_NULL))
+			this.name = null;
+		
 		this.quantity 			= in.readInt();
+		
 		this.receipt 			= in.readString();
+		
+		if (this.receipt != null && this.receipt.equals(PHContent.PARCEL_NULL))
+			this.receipt = null;
+		
+		
 		this.callback 			= in.readString();
+		
+		if (this.callback != null && this.callback.equals(PHContent.PARCEL_NULL))
+			this.callback = null;
+		
 		this.contentview_intent = in.readString();
+		
+		if (this.contentview_intent != null && this.contentview_intent.equals(PHContent.PARCEL_NULL))
+			this.contentview_intent = null;
 	}
 	
 	public int describeContents() {
@@ -109,12 +127,12 @@ public class PHPurchase implements Parcelable {
 	}
 	
 	public void writeToParcel(Parcel out, int flags) {
-		out.writeString(product);
-		out.writeString(name);
+		out.writeString(product == null ? PHContent.PARCEL_NULL : product);
+		out.writeString(name == null ? PHContent.PARCEL_NULL : name);
 		out.writeInt(quantity);
-		out.writeString(receipt);
-		out.writeString(callback);
-		out.writeString(contentview_intent);
+		out.writeString(receipt == null ? PHContent.PARCEL_NULL : receipt);
+		out.writeString(callback == null ? PHContent.PARCEL_NULL : callback);
+		out.writeString(contentview_intent == null ? PHContent.PARCEL_NULL : contentview_intent);
 	}
 }
 

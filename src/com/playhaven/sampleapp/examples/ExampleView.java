@@ -13,6 +13,7 @@ import android.widget.LinearLayout;
 
 import com.playhaven.androidsdk.R;
 import com.playhaven.sampleapp.DetailAdapter;
+import com.playhaven.src.common.PHSession;
 
 /** Represents a single abstract base class which allows you to make a sample
  * request to the server and post back with results.
@@ -125,4 +126,17 @@ public class ExampleView extends ListActivity {
 		
 		addMessage("Started Request");
 	}
+	
+	@Override
+    protected void onResume() {
+        super.onResume();
+        PHSession.register(this);
+    }
+    
+    @Override
+    protected void onPause() {
+        super.onPause();
+        PHSession.unregister(this);
+    }
+	
 }

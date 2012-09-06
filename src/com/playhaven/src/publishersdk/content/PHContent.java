@@ -27,6 +27,8 @@ public class PHContent implements Parcelable {
 		Dialog
 	};
 
+	public static final String PARCEL_NULL = "null";
+	
 	public TransitionType transition = TransitionType.Modal;
 	
 	public String closeURL;
@@ -52,27 +54,45 @@ public class PHContent implements Parcelable {
 	
 	/** Creates from Parcel*/
 	public PHContent(Parcel in) {
-		transition = TransitionType.valueOf(in.readString());
+		String transition_str = in.readString();
+		if (transition_str != null)
+			if ( ! transition_str.equals(PARCEL_NULL))
+				transition = TransitionType.valueOf(transition_str);
+			
 		closeURL = in.readString();
 		
+		if (closeURL != null && closeURL.equals(PARCEL_NULL))
+			closeURL = null;
+		
 		try {
-			context = new JSONObject(in.readString());
+			String context_str = in.readString();
+			if (context_str != null)
+				if ( ! context_str.equals(PARCEL_NULL))
+					context = new JSONObject(context_str);
+			
 		} catch (JSONException e) {
 			PHStringUtil.log("Error hydrating PHContent JSON context from Parcel: "+e.getLocalizedMessage());
 		}
 		
-		url = Uri.parse(in.readString());
+		String url_str = in.readString();
+		if (url_str != null)
+			if ( ! url_str.equals(PARCEL_NULL))
+				url = Uri.parse(url_str);
+			
 		closeButtonDelay = in.readDouble();
 		
 		Bundle frameBundle = in.readBundle();
-		for (String key : frameBundle.keySet()) {
-			try {
-				frameDict.put(key, new JSONObject(frameBundle.getString(key)));
-			} catch (JSONException e) {
-				PHStringUtil.log("Error deserializing frameDict from bundle in PHContent");
+		if (frameBundle != null) {
+			for (String key : frameBundle.keySet()) {
+				try {
+					frameDict.put(key, new JSONObject(frameBundle.getString(key)));
+				} catch (JSONException e) {
+					PHStringUtil.log("Error deserializing frameDict from bundle in PHContent");
+				}
+				
 			}
-			
 		}
+		
 	}
 
 	/**
@@ -112,7 +132,7 @@ public class PHContent implements Parcelable {
 					setFrameDict((JSONObject) frame);
 
 				
-				this.url = (url != null ? Uri.parse(url) : null);
+				this.url = ((url.compareTo("") != 0) ? Uri.parse(url) : null);
 
 				
 				JSONObject context = dict.optJSONObject("context");
@@ -123,7 +143,7 @@ public class PHContent implements Parcelable {
 					this.context = context;
 				
 				
-				if (transition != null) {
+				if (transition.compareTo("") != 0) {
 					if (transition.equals("PH_MODAL"))
 						this.transition = TransitionType.Modal;
 					else if (transition.equals("PH_DIALOG"))
@@ -210,23 +230,26 @@ public class PHContent implements Parcelable {
 	////////////////////////////////////////////////////////
 	/////////////////// Parcelable Methods /////////////////
 	
+	@Override
 	public int describeContents() {
 		return 0; // no files descriptors..
 	}
 	
+	@Override
 	public void writeToParcel(Parcel out, int flags) {
-		out.writeString(transition.name());
-		out.writeString(closeURL);
-		out.writeString(context.toString());
-		out.writeString(url.toString());
+		out.writeString(transition != null ? transition.name() : PARCEL_NULL);
+		out.writeString(closeURL != null ? closeURL : PARCEL_NULL );
+		out.writeString(context != null ? context.toString() : PARCEL_NULL);
+		out.writeString(url != null ? url.toString() : PARCEL_NULL);
 		out.writeDouble(closeButtonDelay);
 		
-		// convert JSONObject to string representation
-		Bundle frameBundle = new Bundle();
-		for (String key : frameDict.keySet()) {
-			frameBundle.putString(key, frameDict.get(key).toString());
-		}
-		
-		out.writeBundle(frameBundle);
+		if (frameDict != null) {
+			// convert JSONObject to string representation
+			Bundle frameBundle = new Bundle();
+			for (String key : frameDict.keySet()) {
+				frameBundle.putString(key, frameDict.get(key).toString());
+			}
+			out.writeBundle(frameBundle);
+		}		
 	}
 }

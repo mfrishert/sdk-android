@@ -8,6 +8,6 @@ package com.playhaven.src.common;
  */
 public class PHSDKVersion {
 	public static final String getCurrentVersion() {
-		return "1.11.0";
+		return "1.12.0";
 	}
 }

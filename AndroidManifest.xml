@@ -21,7 +21,8 @@
         <activity android:name="com.playhaven.sampleapp.SamplePreferences"></activity>
         <activity android:name="com.playhaven.sampleapp.examples.PublisherContentView"></activity>
         <activity android:name="com.playhaven.sampleapp.examples.PublisherIAPView"></activity>
-		<activity android:name="com.playhaven.src.publishersdk.content.PHContentView" android:theme="@android:style/Theme.Dialog"></activity>
+		<activity android:name="com.playhaven.src.publishersdk.content.PHContentView" android:theme="@android:style/Theme.Translucent"
+		    android:windowSoftInputMode="adjustResize"></activity>
 		
 		<service android:name="com.playhaven.sampleapp.billing.BillingService" />
 		

@@ -12,6 +12,9 @@ proguard-project.txt
 
 gen
 
+# when unit testing DiskLruCache
+tests/robolectric_unit/mock_cache/journal
+
 tmp
 
 local.properties

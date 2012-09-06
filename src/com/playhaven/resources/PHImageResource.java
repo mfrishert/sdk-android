@@ -8,6 +8,7 @@ import android.graphics.BitmapFactory;
 import android.graphics.drawable.BitmapDrawable;
 import android.util.Base64;
 import android.util.DisplayMetrics;
+import java.lang.UnsupportedOperationException;
 
 /** Represents image resource which wraps a base64 encoded image. It contains a dictionary of images for the different densities.
  * This dictionary of different values allows us to automatically handle different screen densities (like the default resource loading does).
@@ -45,6 +46,7 @@ public class PHImageResource extends PHResource {
 			this.setDataStr(density, data);
 		}
 	}
+	
 	@Override
 	public void setDataStr(String data) {
 		throw new UnsupportedOperationException("You must use setDataStr(density, data) when setting image data");
@@ -60,6 +62,7 @@ public class PHImageResource extends PHResource {
 		// find closest density (find smallest difference)
 		if (data_map.size() == 0) return null;
 		
+		// find the element with the closest density (minimize the density)
 		int minDiff = Integer.MAX_VALUE;
 		int closestDensity = DisplayMetrics.DENSITY_DEFAULT;
 		
@@ -77,7 +80,8 @@ public class PHImageResource extends PHResource {
 		if (buffer == null) return null;
 		
 		Bitmap closestImage = BitmapFactory.decodeByteArray(buffer, 0, buffer.length);
-		closestImage.setDensity(closestDensity); //IMPORTANT! We must set this to support scaling
+		if (closestImage != null)
+			closestImage.setDensity(closestDensity); //IMPORTANT! We must set this to support scaling (true density of the image)
 		
 		return closestImage;
 	}
@@ -91,7 +95,7 @@ public class PHImageResource extends PHResource {
 
 			// if still no data!!
 			if (cached_image == null)
-				throw new ArrayIndexOutOfBoundsException("You have not specified image data for the requested density");
+				throw new ArrayIndexOutOfBoundsException("You have not specified image data for the requested density or the image data is invalid");
 			
 			cached_images.put(new Integer(densityType), cached_image);
 		}
@@ -105,12 +109,4 @@ public class PHImageResource extends PHResource {
 		return loadImage();
 	}
 	
-	
-	
-	/////////////////////////////////////////////////////////////////////
-	/////////////////////////// Convenience Methods /////////////////////
-	
-	public BitmapDrawable loadBitmapDrawable(Resources res, int densityType) throws ArrayIndexOutOfBoundsException {
-		return new BitmapDrawable(res, loadImage(densityType));
-	}
 }

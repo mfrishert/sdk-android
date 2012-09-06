@@ -28,7 +28,10 @@ public class PHPublisherMetadataRequest extends PHAPIRequest {
 	@Override
 	public Hashtable<String, String> getAdditionalParams() {
 		Hashtable<String, String> params = new Hashtable<String, String>();
-		params.put("placement_id", this.placement);
+		
+		if (placement != null)
+			params.put("placement_id", this.placement);
+		
 		params.put("metadata", "1");
 		
 		return params;

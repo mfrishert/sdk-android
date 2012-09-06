@@ -3,12 +3,12 @@ package com.playhaven.sampleapp.examples;
 import org.json.JSONObject;
 
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 
 import com.playhaven.androidsdk.R;
 import com.playhaven.sampleapp.billing.PurchaseHelper;
-import com.playhaven.sampleapp.billing.ResponseHandler;
 import com.playhaven.src.common.PHAPIRequest;
 import com.playhaven.src.publishersdk.content.PHContent;
 import com.playhaven.src.publishersdk.content.PHPublisherContentRequest;
@@ -58,8 +58,6 @@ public class PublisherContentView extends ExampleView implements PHPublisherCont
 		placementTxt = new EditText(this);
 		placementTxt.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, .9f)); // smaller weight means bigger?
 		placementTxt.setHint(R.string.default_placement);
-		//TODO: debugging only
-		placementTxt.setText("featured_test");
 		placementTxt.setContentDescription("placementTxt");
 		
 		topbar.addView(placementTxt);
@@ -71,8 +69,8 @@ public class PublisherContentView extends ExampleView implements PHPublisherCont
 	public void startRequest() {
 		super.startRequest();
 		
-		//testing the badge
-		PHNotificationView notifyView = new PHNotificationView(this, "more_games");
+		// testing the badge
+		PHNotificationView notifyView = new PHNotificationView(this, placementTxt.getText().toString());
 		notifyView.setBackgroundColor(0xFF020AFF);
 		notifyView.refresh();
 		
@@ -83,6 +81,7 @@ public class PublisherContentView extends ExampleView implements PHPublisherCont
 		request = new PHPublisherContentRequest(this, placementTxt.getText().toString());
 		request.setOnPurchaseListener(this);
 		
+		request.preload();
 		request.send();
 	}
 	

@@ -4,26 +4,23 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
-import java.net.URI;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Hashtable;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
 
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpVersion;
 import org.apache.http.NameValuePair;
-import org.apache.http.ProtocolException;
 import org.apache.http.client.entity.UrlEncodedFormEntity;
 import org.apache.http.client.methods.HttpGet;
-import org.apache.http.conn.scheme.SchemeRegistry;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpUriRequest;
 import org.apache.http.client.params.ClientPNames;
 import org.apache.http.client.params.HttpClientParams;
 import org.apache.http.conn.scheme.Scheme;
+import org.apache.http.conn.scheme.SchemeRegistry;
 import org.apache.http.impl.client.DefaultHttpClient;
 import org.apache.http.impl.client.DefaultRedirectHandler;
 import org.apache.http.message.BasicNameValuePair;
@@ -58,9 +55,6 @@ public class PHAsyncRequest extends AsyncTask<Uri, Integer, ByteBuffer> {
 	
 	public static final int INFINITE_REDIRECTS = Integer.MAX_VALUE;
 	
-	// for unit testing
-	private CountDownLatch signal;
-
 	public Uri url;
 
 	public enum RequestType {
@@ -75,7 +69,7 @@ public class PHAsyncRequest extends AsyncTask<Uri, Integer, ByteBuffer> {
 	
 	private ArrayList<NameValuePair> postParams = new ArrayList<NameValuePair>();
 	
-	private boolean isDownloading = true;
+	private boolean isDownloading;
 		
 	private PHHttpConn client;
 
@@ -101,7 +95,7 @@ public class PHAsyncRequest extends AsyncTask<Uri, Integer, ByteBuffer> {
 		
 		private String password;
 		
-		private SchemeRegistry mSchemeReg = new SchemeRegistry();
+		private PHSchemeRegistry mSchemeReg = new PHSchemeRegistry();
 		
 		private int totalRedirects = 0;
 		
@@ -121,8 +115,24 @@ public class PHAsyncRequest extends AsyncTask<Uri, Integer, ByteBuffer> {
 				return shouldRedirect(response);
 			}
 		}
-		protected void setMaxRedirect(int max) {
+		
+		/** We must use this wrapper so that we can utilize different scheme registries.
+		 * when testing.
+		 */
+		public static class PHSchemeRegistry {
+			private SchemeRegistry schemeReg = new SchemeRegistry();
+			
+			public Scheme get(String name) {
+				return schemeReg.get(name);
+			}
+		}
+		
+		public void setMaxRedirect(int max) {
 			max_redirects = max;
+		}
+		
+		public int getMaxRedirects() {
+			return max_redirects;
 		}
 		
 		///////////////////////////
@@ -131,17 +141,21 @@ public class PHAsyncRequest extends AsyncTask<Uri, Integer, ByteBuffer> {
 			//set our hook into the redirect handler
 			client.setRedirectHandler(new PHRedirectHandler());
 		}
-		public PHHttpConn(HttpParams params) {
-			client = new DefaultHttpClient();
-			client.setParams(enableRedirecting(params));
+		
+		public void setSchemeRegistry(PHSchemeRegistry reg) {
+			this.mSchemeReg = reg;
+		}
+		
+		public DefaultHttpClient getHTTPClient() {
+			return client;
 		}
 
 		////////////////////////////////////////
 		/////// Redirect Methods ///////////////
 		public String getLastRedirect() {
-			if(redirectUrls.size() == 0) return null;
+			if (redirectUrls.size() == 0) return null;
 			
-			return redirectUrls.get(redirectUrls.size()-1);
+			return redirectUrls.get(redirectUrls.size() - 1);
 		}
 		
 		public void addRedirectUrl(String url) {
@@ -153,7 +167,7 @@ public class PHAsyncRequest extends AsyncTask<Uri, Integer, ByteBuffer> {
 		}
 		
 		/** Checks to see if status code is redirect request or not.*/
-		private boolean isRedirectResponse(int code) {
+		public boolean isRedirectResponse(int code) {
 			return (code >= 300 && code <= 307);
 		}
 		
@@ -177,7 +191,11 @@ public class PHAsyncRequest extends AsyncTask<Uri, Integer, ByteBuffer> {
 				
 				Uri uri = Uri.parse(redirectURL);
 				
-				if (uri == null) return false;
+				if (uri == null 				|| 
+					uri.getScheme() == null 	|| 
+					uri.getPath() == null) 
+								return false;
+				
 				
 				// at least add to the redirects
 				addRedirectUrl(uri.toString());
@@ -209,6 +227,14 @@ public class PHAsyncRequest extends AsyncTask<Uri, Integer, ByteBuffer> {
 			this.username = username;
 		}
 		
+		public String getUsername() {
+			return username;
+		}
+		
+		public String getPassword() {
+			return password;
+		}
+		
 		public void setPassword(String password) {
 			this.password = password;
 		}
@@ -222,44 +248,26 @@ public class PHAsyncRequest extends AsyncTask<Uri, Integer, ByteBuffer> {
 			
 			// use http auth if available
 			if (username != null && password != null) {
-				String encodedCredentials = Base64.encodeToString((username+":"+password).getBytes(), Base64.DEFAULT);
+				String encodedCredentials = Base64.encodeToString((username + ":" + password).getBytes(), Base64.URL_SAFE | Base64.NO_WRAP);
 				String authStr = String.format("Basic %s", encodedCredentials);
 				
-				request.setHeader("Authorization", "Basic "+authStr);
+				request.setHeader("Authorization", authStr);
 			}
 			
 			return client.execute(request);
 		}
 		
-		public void cancel() {
-			synchronized (this) {
-				try {
-					if (cur_request != null)
-						cur_request.abort();
-				} catch (Exception e) {
-					e.printStackTrace();
-				} finally {
-					client.getConnectionManager().shutdown();
-					cur_request = null;
-				}
-			}
-			
+		public HttpUriRequest getCurrentRequest() {
+			return cur_request;
 		}
 	}
 	
 	/** Delegate interface. All calls will be on the main UI thread */
 	public static interface Delegate {
-		public void requestFinished(ByteBuffer response);
+		public void requestFinished(ByteBuffer response, int responseCode);
 
 		public void requestFailed(Exception e);
-		
-		public void requestResponseCode(int responseCode);
-		
-		/** Called when request progress updates. Passes in progress with a value between
-		 * 0 and 100.
-		 * @param progress
-		 */
-		public void requestProgressUpdate(int progress);
+				
 	}
 
 	private Delegate delegate;
@@ -274,11 +282,19 @@ public class PHAsyncRequest extends AsyncTask<Uri, Integer, ByteBuffer> {
 		client.setMaxRedirect(max);
 	}
 	
-	protected void addPostParam(String key, String value) {
+	public int getMaxRedirects() {
+		return client.getMaxRedirects();
+	}
+	
+	public ArrayList<NameValuePair> getPostParams() {
+		return postParams;
+	}
+	
+	public void addPostParam(String key, String value) {
 		postParams.add(new BasicNameValuePair(key, value));
 	}
 	
-	protected void addPostParams(Hashtable<String, String> params) {
+	public void addPostParams(Hashtable<String, String> params) {
 		if (params == null) return;
 		
 		postParams.clear();
@@ -294,7 +310,12 @@ public class PHAsyncRequest extends AsyncTask<Uri, Integer, ByteBuffer> {
 		return client.getLastRedirect();
 	}
 	
+	public PHHttpConn getPHHttpClient() {
+		return client;
+	}
+	
 	/** We only take the first uri, so don't bother passing in more than one. */
+	@Override
 	protected ByteBuffer doInBackground(Uri... urls) {
 		return execRequest(urls);
 	}
@@ -302,11 +323,12 @@ public class PHAsyncRequest extends AsyncTask<Uri, Integer, ByteBuffer> {
 	/** Moved into supporting method so that we can call ourselves recursively on redirects.*/
 	private ByteBuffer execRequest(Uri... urls) {
 		ByteBuffer buffer = null;
+		responseCode = -1;
+		lastError = null;
 		
 		synchronized (this) {
 		try { // this block swallows *all* worst case exceptions
 			isDownloading = true;
-			lastError = null;
 			
 			requestStart = System.currentTimeMillis();
 			
@@ -354,9 +376,6 @@ public class PHAsyncRequest extends AsyncTask<Uri, Integer, ByteBuffer> {
 					if (responseCode == 302 && getLastRedirectURL() != null)
 						responseCode = 200;
 					
-					// notify delegate with response code (-1 is the flag for response code)
-					publishProgress(responseCode);
-					
 					if (isCancelled()) return null;
 					
 					if (entity != null) {
@@ -369,7 +388,6 @@ public class PHAsyncRequest extends AsyncTask<Uri, Integer, ByteBuffer> {
 
 				} catch (IOException e) {
 					lastError = e;
-					e.printStackTrace();
 				}
 			}
 		} catch (Exception e) {
@@ -380,76 +398,67 @@ public class PHAsyncRequest extends AsyncTask<Uri, Integer, ByteBuffer> {
 		return buffer;
 	}
 	
+	@Override
+	protected void onPostExecute(ByteBuffer result) {
+		super.onPostExecute(result);
+		
+		try { // swallow *all* exceptions (safety)
+			isDownloading = false;
+			
+			long elapsedTimeMillis = System.currentTimeMillis() - requestStart;
+			String outTime = "PHAsyncRequest elapsed time (ms) = " + elapsedTimeMillis;
+			PHStringUtil.log(outTime);
+			
+			if(lastError != null && delegate != null)
+				delegate.requestFailed(lastError);
+			else if (delegate != null)
+				delegate.requestFinished(result, responseCode);
+			
+		} catch (Exception e) {
+			PHCrashReport.reportCrash(e, "PHAsyncRequest - onPostExecute", PHCrashReport.Urgency.critical);
+		}
+		
+	}
+	
 	public void setUsername(String username) {
 		this.username = username;
 		client.setUsername(username);
+	}
+	
+	public String getUsername() {
+		return username;
 	}
 	
 	public void setPassword(String password) {
 		this.password = password;
 		client.setPassword(password);
 	}
-	/** Allows for dependency injection of custom http connection.
-	 * (basically for unit tests)*/
-	public void setHttpClient(PHHttpConn client) {
+	
+	public RequestType getRequestType() {
+		return request_type;
+	}
+	
+	public String getPassword() {
+		return password;
+	}
+	
+	public void setPHHttpClient(PHHttpConn client) {
 		this.client = client;
 	}
 	
-	/** Sets the count down signal latch. Mostly used for unit testing.*/
-	public void setCountDownLatch(CountDownLatch signal) {
-		synchronized(this) {
-			if(!isDownloading)
-				this.signal = signal;
-		}
+	public boolean isDownloading() {
+		return isDownloading;
 	}
 	
-	@Override
-	protected void onProgressUpdate(Integer... progress) {
-		if(progress.length > 0) {
-			int prog = progress[0];
-			
-			// post response code
-			if (delegate != null)
-				delegate.requestResponseCode(prog);
-			
-		}
-		
-	}
-
 	@Override
 	protected void onCancelled() {
 		isDownloading = false;
-		client.cancel();
+		// TODO: this method is not particularly useful
 	}
 	
-	@Override
-	protected void onPostExecute(ByteBuffer result) {
-		
-		try { // swallow *all* exceptions (safety)
-		super.onPostExecute(result);
-		isDownloading = false;
-		
-		if(signal != null) {
-			signal.countDown();
-		}
-		
-		long elapsedTimeMillis = System.currentTimeMillis() - requestStart;
-		String outTime = "PHAsyncRequest elapsed time (ms) = " + elapsedTimeMillis;
-		PHStringUtil.log(outTime);
-		
-		if(lastError != null)
-			delegate.requestFailed(lastError);
-		else
-			delegate.requestFinished(result);
-		
-		} catch (Exception e) {
-			PHCrashReport.reportCrash(e, "PHAsyncRequest - onPostExecute", PHCrashReport.Urgency.critical);
-		}
-		
-	}
 
 	/** public, static utility method for converting input stream to ByteBuffer */
-	public static ByteBuffer readStream(InputStream inputStream) throws IOException {
+	private static ByteBuffer readStream(InputStream inputStream) throws IOException {
 		ByteArrayOutputStream output = new ByteArrayOutputStream();
 
 		int bufferSize = 1024;
@@ -464,7 +473,8 @@ public class PHAsyncRequest extends AsyncTask<Uri, Integer, ByteBuffer> {
 		output.flush();
 		return ByteBuffer.wrap(output.toByteArray());
 	}
+	
 	public static String streamToString(InputStream inputStream) throws IOException, UnsupportedEncodingException {
-		return new String(readStream(inputStream).array(), "UTF8");
+		return new String(readStream(inputStream).array(), "UTF-8");
 	}
 }
