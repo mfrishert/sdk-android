@@ -1,8 +1,12 @@
-PlayHaven Android SDK 1.12.0
+PlayHaven Android SDK 1.12.1
 ====================
-PlayHaven is a real-time mobile game marketing platform which helps you take control of the business of your games.
+PlayHaven is a mobile game LTV-maximization platform which helps you take control of the business of your games.
 
-An API token and secret is required to use this SDK. Visit the PlayHaven developer dashboard at https://dashboard.playhaven.com.
+Acquire, retain, re-engage, and monetize your players with the help of PlayHaven's powerful marketing platform. Integrate once and embrace the flexibility of the web as you build, schedule, deploy, and analyze your in-game promotions and monetization in real-time through PlayHaven's easy-to-use, web-based dashboard. 
+
+An API token and secret is required to use this SDK. These tokens uniquely identify your app to PlayHaven and prevent others from making requests to the API on your behalf. To get a token and secret, please visit the [PlayHaven Dashboard](https://dashboard.playhaven.com).
+
+If you have any questions, visit the [Help Center](http://help.playhaven.com) or contact us at [support@playhaven.com](mailto:support@playhaven.com).  We also recommend reviewing our [Optimization Guides](http://help.playhaven.com/customer/portal/topics/113947-optimization-guides/articles) to learn the best practices and get the most out of your PlayHaven integration.
 
 Table of Contents
 =================
@@ -11,7 +15,8 @@ Table of Contents
     * [JAR Integration](#jar-integration)
 * [Usage](#usage)
     * [Recording Game Opens](#recording-game-opens)
-    * [Showing Ads](#displaying-full-screen-ads)
+    * [Showing Content](#displaying-content)
+    * [Optimizing for Performance](#optimizing-for-performance)
     * [Notification Badges](#displaying-a-notification-badge)
     * [Unlocking Rewards](#unlocking-rewards)
     * [Handling Virtual Goods Purchases](#handling-virtual-goods-purchases)
@@ -22,20 +27,20 @@ Table of Contents
     * [PHPublisherContentRequest delegates](#phpublishercontentrequest-delegates)
 * [Tips n' Tricks](#tips-and-tricks)
     * [didDismissContentWithin](#diddismisscontentwithintimerange)
-    * [Optimizing for Performance](#optimizing-for-performance)
+
 
 Installation
 ============
 
 Integrating the PlayHaven Android SDK is dead simple and should take no more than a minute.
 
-**Note:** The PlayHaven SDK requires a minimum of Android 2.2 (API Level 8).
+**Note:** The PlayHaven SDK requires a minimum of Android 2.2 (API Level 8). If you are developing for API levels including those below 8 please see the Android developer section [here] (http://developer.android.com/guide/google/play/publishing/multiple-apks.html) .
 
 **Note:** If you are developing your game using Unity, this instructions are irrelevant and you should use the PlayHaven Unity SDK located [here](https://github.com/playhaven/sdk-unity).
 
 ### JAR Integration
 
-1. Download the PlayHaven SDK [here](http://playhaven-sdk-builds.s3.amazonaws.com/android/jars/playhaven-1.12.0.jar) and ensure you have the latest version of the [Android Developer Tools installed](http://developer.android.com/sdk/eclipse-adt.html#updating).
+1. Download the PlayHaven SDK [here](http://playhaven-sdk-builds.s3.amazonaws.com/android/jars/playhaven-1.12.1.jar) and ensure you have the latest version of the [Android Developer Tools installed](http://developer.android.com/sdk/eclipse-adt.html#updating).
 
 2. Install the SDK into your project.
     1. If a __libs__ folder doesn't already exist, create one in your project root. Android will automatically recognize it.
@@ -44,11 +49,11 @@ Integrating the PlayHaven Android SDK is dead simple and should take no more tha
         
         <img src="http://i1249.photobucket.com/albums/hh509/samatplayhaven/ScreenShot2012-06-13at105708AM.png"  style="padding: 5px" />
         
-    2. Drag the PlayHaven SDK JAR file you downloaded into the __libs__ folder.
+    2. Drag the PlayHaven SDK JAR file you downloaded into the __libs__ folder. If prompted, select 'Copy files' as opposed to 'Link to files'.
         
         <img src="http://i1249.photobucket.com/albums/hh509/samatplayhaven/ScreenShot2012-06-13at105747AM3.png" style="padding: 5px" />
         
-    4. Add the appropriate import statement to your source files:
+    3. Add the appropriate import statement to your source files:
         ```java
         import com.playhaven.*;
         ```
@@ -56,11 +61,19 @@ Integrating the PlayHaven Android SDK is dead simple and should take no more tha
 3. Set the API keys you received from the [dashboard](http://www.dashboard.playhaven.com). Although you can set these wherever you wish, we advise the root `Activity`.
 
  ```java
- PHConfig.token = "your token"
- PHConfig.secret = "your secret"
+ PHConfig.token = "your token";
+ PHConfig.secret = "your secret";
+ ```
+
+Make sure prior to compiling that you've imported `PHConfig`. This may be done by:
+
+ ```java
+ import com.playhaven.src.common.PHConfig;
  ```
 
 4. Add the ad view to your `AndroidManifest.xml` file.
+
+**Note:** The activity XML tag must be placed inside the application tag.
 
 ```xml
 <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
@@ -78,7 +91,7 @@ Usage
 
 ## Recording game opens
 
-**Purpose:** helps the server track game usage.
+**Purpose:** helps the server track game usage. 
 
 **Notes:** Make sure to pass in a `Context` (usually an `Activity`) to the `PHPublisherOpenRequest` constructor.
 
@@ -88,17 +101,40 @@ PHPublisherOpenRequest request = new PHPublisherOpenRequest([your context]);
 request.send();
 ```
 
-## Displaying full-screen ads
+## Displaying Content
 
-**Purpose:** Displays a fullscreen ad unit with the placement specified. 
+**Purpose:** Displays a fullscreen content unit with the placement specified. Content units include ads, announcements and cross-promotions. Please see [here] (http://help.playhaven.com/customer/portal/articles/683511-what-features-does-playhaven-offer-) for a complete list of content units PlayHaven has available. 
 
 **Notes:** Make sure to provide the `PHPublisherContentRequest` constructor with a valid `Context` (usually an `Activity`). You can specify placements in the PlayHaven [dashboard](http://www.dashboard.playhaven.com]).
+
+**Notes:** If you wish to display a content unit when an activity loads it is recommended that you do so by placing it in the `onResume` method of the `Activity`. This will cause the content unit to be displayed whenever the `Activity` comes to the foreground. This allows for maximum flexibility in tuning the display of the content unit.
 
 ```java
 PHPublisherContentRequest request = new PHPublisherContentRequest([your context], "your placement");
 
 request.send();
 ```
+
+### Optimizing for Performance
+
+The PlayHaven SDK will automatically download and store a number of content templates after a successful `PHPublisherOpenRequest` (see [Recording Game Opens](#recording-game-opens)).
+
+To further improve the responsiveness of your ads, you may choose to preload a content unit for a given placement. To do so, simply call `preload()` to start the network request without displaying the advertisement. When you are prepared to display the advertisement, call `send()` as usual. This feature is especially important for slow mobile data connections.
+
+```java
+PHPublisherContentRequest request = new PHPublisherContentRequest([your context], "your placement");
+// Set your listeners, we only set the content listener here.
+request.setOnContentListener([your content delegate]);
+request.preload();
+
+// ...
+// ...
+// ...
+
+// Elsewhere in the code...
+request.send();
+```
+
 
 ## Displaying a notification badge
 
@@ -118,7 +154,7 @@ notifyView.refresh();
 
 **Purpose:** Allows your game to respond when the users unlocks rewards you have configured in the [dashboard](http://www.dashboard.playhaven.com]).
 
-**Notes:** You must set the `RewardDelegate` on a `PHPublisherContentRequest` object to receive this callback. See the [Callbacks](#callbacks) section below for more information.
+**Notes:** You must implement the `PHPublisherContentRequest.RewardDelegate` interface, and set the delegate object on a `PHPublisherContentRequest` object in order to receive this callback. This requires implementing the method `unlockedReward` in your delegate object. See the [Callbacks](#callbacks) section below for more information.
 
 ```java
 public void unlockedReward(PHPublisherContentRequest request, PHReward reward) {
@@ -126,7 +162,7 @@ public void unlockedReward(PHPublisherContentRequest request, PHReward reward) {
 }
 ```
 
-The PHReward object has the following useful properties:
+The `PHReward` object has the following useful properties:
 
 * __name:__     The reward's name (specified in the dashboard)
 * __quantity:__ The reward's amount (specified in the dashboard) 
@@ -188,12 +224,15 @@ __Potential Pitfall: The `.reportResolution(...)` call must happen before sendin
 
 In order to use connection targeting, include the `ACCESS_NETWORK_STATE` permission in your `AndroidManifest.xml` file.
 
+```xml
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+```
 
 ## Tracking User Activity
 
 The PlayHaven Android SDK makes tracking user activity simple. Register an Android activity for tracking by calling `PHSession.register([your activity])` in the `onResume()` handler and `PHSession.unregister([your activity])` in the `onPause()` handler of your activity.
 
-**Note:** Make sure to record game opens (see [Recording Game Opens](#recording-game-opens)).
+**Note:** Game opens must be recorded for user activity tracking to function (see [Recording Game Opens](#recording-game-opens)).
 
 **Note:** Include the `unregister()` and `register()` calls in all relevant activities.
 
@@ -219,7 +258,7 @@ protected void onPause() {
 ## Callbacks
 
 
-Every type of request in the PlayHaven Android SDK has a special "delegate" you can set to receive "callbacks" as the request progresses. You can find more information regarding the delegate pattern [here](http://en.wikipedia.org/wiki/Delegation_pattern).
+Every type of request in the PlayHaven Android SDK has a special "delegate" which may be set to receive "callbacks" as the request progresses. You can find more information regarding the delegate pattern [here](http://en.wikipedia.org/wiki/Delegation_pattern).
 
 You must implement the appropriate delegate *interface* from the list below and then add your object as a delegate. Most often the root `Activity` should handle the callbacks.
 
@@ -360,32 +399,13 @@ This special method within `PHPublisherContentRequest` is helpful when you wish 
 ```java
 @Override
 public void onResume() {
-	super.onResume();
-	if (PHPublisherContentRequest.didDismissContentWithin(2000)) { // can actually be less than 2 seconds, all we want is enough time for onResume to be called
-		System.out.println("Resumed after displaying ad unit");
-		return; 
-	}
-	
-	System.out.println("Resumed after other app was shown");
+    super.onResume();
+    if (PHPublisherContentRequest.didDismissContentWithin(2000)) { // can actually be less than 2 seconds, all we want is enough time for onResume to be called
+        System.out.println("Resumed after displaying ad unit");
+        return; 
+    }
+    
+    System.out.println("Resumed after other app was shown");
 }
 ```
 
-### Optimizing for Performance
-
-The PlayHaven SDK will automatically download and store a number of content templates after a successful `PHPublisherOpenRequest` (see [Recording Game Opens](#recording-game-opens)).
-
-To further improve the responsiveness of your ads, you may choose to preload a content unit for a given placement. To do so, simply call `preload()` to start the network request without displaying the advertisement. When you are prepared to display the advertisement, call `send()` as usual. This feature is especially important for slow mobile data connections.
-
-```java
-PHPublisherContentRequest request = new PHPublisherContentRequest([your context], "your placement");
-// Set your listeners, we only set the content listener here.
-request.setOnContentListener([your content delegate]);
-request.preload();
-
-// ...
-// ...
-// ...
-
-// Elsewhere in the code...
-request.send();
-```

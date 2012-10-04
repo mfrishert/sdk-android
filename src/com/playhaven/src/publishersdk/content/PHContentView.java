@@ -389,11 +389,19 @@ public class PHContentView extends Activity implements PHURLLoader.Delegate,
 			PHStringUtil.log("Loading template URL: '" + url + "'");
 			boolean hasPrecached = false;
 			
-			if (PHConfig.precache)
+			if (PHConfig.precache) {
 				hasPrecached = loadPrecachedIfExists(url);
+			}
 			
-			if ( ! hasPrecached)
-				webview.loadUrl(url);
+			if (hasPrecached) {
+			    if (content.preloaded) {
+			        // The content is preloaded, check for cached images
+	                PHPublisherContentRequest.processResponse(content.context, false);    
+			    }
+			} else {
+			    // The content template is not cached, load it
+                webview.loadUrl(url);
+			}
 			
 		} catch (Exception e) { // swallow all exceptions
 			PHCrashReport.reportCrash(e, "PHContentView - loadURLOrPrecache", PHCrashReport.Urgency.low);
@@ -872,8 +880,9 @@ public class PHContentView extends Activity implements PHURLLoader.Delegate,
 		super.onStart();
 		
 		try {
-            if (PHConfig.precache && DiskLruCache.getSharedDiskCache() != null) {
-                DiskLruCache.getSharedDiskCache().open();
+		    DiskLruCache cache = DiskLruCache.getSharedDiskCache();
+            if (PHConfig.precache && cache != null && cache.isClosed()) {
+                cache.open();
             }
         } catch (IOException e) {
             PHCrashReport.reportCrash(e, "PHContentView - onStart", PHCrashReport.Urgency.critical);
@@ -1009,7 +1018,7 @@ public class PHContentView extends Activity implements PHURLLoader.Delegate,
 	}
 
 	// simple display helpers
-	private void loadTemplate() {
+	protected void loadTemplate() {
 		webview.stopLoading();
 
 		try {

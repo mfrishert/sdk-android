@@ -1,10 +1,16 @@
 package com.playhaven.src.publishersdk.open;
 
-import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
-import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.zip.GZIPInputStream;
+
+import org.apache.http.Header;
+import org.apache.http.HttpEntity;
+import org.apache.http.HttpResponse;
+import org.apache.http.HttpStatus;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.DefaultHttpClient;
 
 import android.os.AsyncTask;
 import android.os.Build;
@@ -66,40 +72,61 @@ public class PHPrefetchTask extends AsyncTask<Integer, Integer, Integer> {
 	protected Integer doInBackground(Integer... dummys) {
 		disableConnectionReuseIfNecessary();
 		
-		int responseCode = HttpURLConnection.HTTP_BAD_REQUEST;
+		int responseCode = HttpStatus.SC_BAD_REQUEST;
 		
 		// Note: while HttpURLConnection might be simpler, we use the Apache
 		// libraries for easier testing with Robolectric
 		try {
 			synchronized (this) {
                 // Note: we ignore the input dummy variables since we use URL
-                if (url == null) return HttpURLConnection.HTTP_BAD_REQUEST;
+                if (url == null) {
+                    return HttpStatus.SC_BAD_REQUEST;
+                }
                 
-                HttpURLConnection urlConn = (HttpURLConnection) url.openConnection();
-                responseCode = urlConn.getResponseCode();
+                DefaultHttpClient client = new DefaultHttpClient();
+                HttpGet request = new HttpGet(url.toString());
+                request.addHeader("Accept-Encoding", "gzip");
                 
-                BufferedInputStream in = new BufferedInputStream(urlConn.getInputStream());
+                HttpResponse response = client.execute(request);
+                
+                responseCode = response.getStatusLine().getStatusCode();
+                if (responseCode != HttpStatus.SC_OK) {
+                    return responseCode;
+                }
+                
+                HttpEntity entity = response.getEntity();
                 
                 // dump to local cache
                 DiskLruCache.Editor editor = getCache().edit(url.toString());
-                
                 // open a new handle to a cached file
                 BufferedOutputStream cachedFile = new BufferedOutputStream(editor.newOutputStream(PHAPIRequest.PRECACHE_FILE_KEY_INDEX));
                 
-                // transfer to cache file
-                byte[] buffer = new byte[BUFFER_SIZE];
-                while (in.read(buffer) != -1) {
-                    cachedFile.write(buffer);
-                }
+                Header contentEncoding = entity.getContentEncoding();
+                String encoding = (contentEncoding == null) ? null : contentEncoding.getValue();
                 
-                in.close();
+                if (encoding != null && encoding.equalsIgnoreCase("gzip")) {
+                    GZIPInputStream in = new GZIPInputStream(entity.getContent());
+
+                    byte[] buffer = new byte[BUFFER_SIZE];
+                    int bytesRead = 0;
+
+                    while ((bytesRead = in.read(buffer)) != -1) {
+                        cachedFile.write(buffer, 0, bytesRead);
+                    }
+                    
+                    in.close();
+                } else {
+                    // Content is not compressed.
+                    entity.writeTo(cachedFile);
+                }
+                    
                 cachedFile.flush();
                 cachedFile.close();
-                
+                    
                 editor.commit();
-                
-                urlConn.disconnect();
-                
+         
+                client.getConnectionManager().shutdown();
+    
                 getCache().flush();
 			}
 		} catch (Exception e) { // swallow all exceptions

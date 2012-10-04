@@ -38,6 +38,8 @@ public class PHContent implements Parcelable {
 	public Uri url;
 
 	public double closeButtonDelay;
+	
+	public boolean preloaded = false;
 
 	private HashMap<String, JSONObject> frameDict = new HashMap<String, JSONObject>();
 
@@ -80,6 +82,8 @@ public class PHContent implements Parcelable {
 				url = Uri.parse(url_str);
 			
 		closeButtonDelay = in.readDouble();
+		
+		preloaded = (in.readByte() == 1);
 		
 		Bundle frameBundle = in.readBundle();
 		if (frameBundle != null) {
@@ -242,6 +246,7 @@ public class PHContent implements Parcelable {
 		out.writeString(context != null ? context.toString() : PARCEL_NULL);
 		out.writeString(url != null ? url.toString() : PARCEL_NULL);
 		out.writeDouble(closeButtonDelay);
+		out.writeByte((byte) (preloaded ? 1 : 0));
 		
 		if (frameDict != null) {
 			// convert JSONObject to string representation

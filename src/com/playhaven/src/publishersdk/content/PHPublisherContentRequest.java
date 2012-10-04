@@ -1,11 +1,13 @@
 package com.playhaven.src.publishersdk.content;
 
+import java.io.File;
+import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
-import org.json.JSONException;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import android.app.Activity;
@@ -17,10 +19,13 @@ import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
 import android.os.Bundle;
 
+import com.jakewharton.DiskLruCache;
 import com.playhaven.src.common.PHAPIRequest;
+import com.playhaven.src.common.PHConfig;
 import com.playhaven.src.common.PHCrashReport;
 import com.playhaven.src.common.PHSession;
 import com.playhaven.src.publishersdk.content.PHContentView.ButtonState;
+import com.playhaven.src.publishersdk.open.PHPrefetchTask;
 import com.playhaven.src.utils.PHStringUtil;
 
 /** 
@@ -36,7 +41,9 @@ public class PHPublisherContentRequest extends PHAPIRequest{
 	private WeakReference<Context> applicationContext; // should be the main Application context (we must have it...)
 	
 	private WeakReference<Context> activityContext; // should be an activity context
-		
+	
+	private DiskLruCache cache;
+	
 	private boolean showsOverlayImmediately = false;
 	
 	public String placement;
@@ -206,6 +213,8 @@ public class PHPublisherContentRequest extends PHAPIRequest{
 		this.applicationContext = new WeakReference<Context>(activity.getApplicationContext());
 		this.activityContext = new WeakReference<Context>(activity);
 		
+		cache = null;
+		
 		registerReceiver();
 		
 		setCurrentState(PHRequestState.Initialized);
@@ -257,8 +266,34 @@ public class PHPublisherContentRequest extends PHAPIRequest{
 	/////////////////////////////////////////////////
 	
 	public void preload() {
-		targetState = PHRequestState.Preloaded;
-		continueLoading();
+	    
+	    if (PHConfig.precache) {
+    	    synchronized (PHPublisherContentRequest.class) {
+                try {
+                    cache = DiskLruCache.getSharedDiskCache();
+                    
+                    if (cache == null) { // create cache if it doesn't exist
+                        // This should not happen, but anyway.
+                        DiskLruCache.createSharedDiskCache(new File(activityContext
+                                                                        .get()
+                                                                        .getCacheDir() 
+                                                                    + File.separator + API_CACHE_SUBDIR), 
+                                          APP_CACHE_VERSION, 
+                                          1, 
+                                          PHConfig.precache_size);
+                        cache = DiskLruCache.getSharedDiskCache();
+                    } else if (cache.isClosed()) {
+                        cache.open();
+                    }
+                    
+                } catch (Exception e) { // swallow all exceptions
+                    PHCrashReport.reportCrash(e, "PHPublisherContentRequest - preload", PHCrashReport.Urgency.critical);
+                }
+    	    }
+	    }
+	    
+	    targetState = PHRequestState.Preloaded;
+	    continueLoading();
 	}
 	
 	private void loadContent() {
@@ -299,6 +334,7 @@ public class PHPublisherContentRequest extends PHAPIRequest{
 
 			if(content_listener != null) 
 				content_listener.didDisplayContent(this, content);
+			
 		}
 	}
 	
@@ -366,11 +402,128 @@ public class PHPublisherContentRequest extends PHAPIRequest{
 		if (content.url == null) {
 		    setCurrentState(PHRequestState.Done);
 		} else {
-		    setCurrentState(PHRequestState.Preloaded);
+    		if (PHConfig.precache && (targetState == PHRequestState.Preloaded) 
+    		        && (cache != null) && !cache.isClosed()) {
+                try {
+                    DiskLruCache.Snapshot precached_snapshot = cache.get(content.url.toString());
+                    
+                    if (precached_snapshot != null) {
+                        File file = precached_snapshot.getInputStreamFile(PHAPIRequest.PRECACHE_FILE_KEY_INDEX);
+                        precached_snapshot.close();
+                        
+                        if (file != null) {
+                            processResponse(response.optJSONObject("context"), true);
+                            
+                            // Mark the content as preloaded, PHContentView will search for cached images at display time
+                            content.preloaded = true;
+                        }
+                    }
+                } catch (IOException e) {
+                    PHCrashReport.reportCrash(e, "PHPublisherContentRequest - handleRequestSuccess", PHCrashReport.Urgency.high);
+                }
+            }
+    		
+    		setCurrentState(PHRequestState.Preloaded);
 		}
 		
 		continueLoading();
 	}
+	
+	/////////////////////////////////////////////////////////////////////
+    ///////////////////////// Image Caching /////////////////////////////
+	
+	private static void fetchImageFromCache(JSONObject config) {
+        if (config == null) {
+            return;
+        }
+        
+        String url = config.optString("url", null);
+        
+        DiskLruCache cache = DiskLruCache.getSharedDiskCache();
+        if (url != null && cache != null && !cache.isClosed()) {
+            try {
+                DiskLruCache.Snapshot precached_snapshot = cache.get(url);
+                
+                if (precached_snapshot == null) {
+                    return;
+                }
+                
+                File file = precached_snapshot.getInputStreamFile(PHAPIRequest.PRECACHE_FILE_KEY_INDEX);
+                precached_snapshot.close();
+                
+                if (file == null) {
+                    return;
+                }
+                
+                config.put("url", "file://" + file.getAbsolutePath());
+                
+            } catch (Exception e) {
+                PHCrashReport.reportCrash(e, "PHPublisherContentRequest - checkCacheForImage", PHCrashReport.Urgency.high);
+            }
+        }
+    }
+	
+	private static void cacheImage(JSONObject config) {
+	    if (config == null) {
+	        return;
+	    }
+	    
+        String url = config.optString("url", null);
+        if (url != null) {
+            PHStringUtil.log("Sending cache request for: " + url);
+            PHPrefetchTask task = new PHPrefetchTask();
+            task.setURL(url);
+            task.execute();
+        }
+	}
+	
+	private static void processResponse(JSONArray array, boolean cache) {
+	    if (array == null) {
+	        return;
+	    }
+	    
+	    for (int i = 0; i < array.length(); ++ i) {
+	        JSONObject object = array.optJSONObject(i);
+	        if (object != null) {
+	            processResponse(object, cache);
+	        } else {
+	            processResponse(array.optJSONArray(i), cache);
+	        }
+	    }
+	}
+	
+    public static void processResponse(JSONObject json, boolean cache) {
+        if (json == null || json.names() == null) {
+            return;
+        }
+        
+        JSONArray keys = json.names();
+        
+        for (int i = 0; i < keys.length(); ++ i) {
+            String k = keys.optString(i);
+            if (k.equals("image")) {
+                JSONObject image = json.optJSONObject(k);
+                if (image != null) {
+                    if (cache) {
+                        cacheImage(image.optJSONObject("PH_PORTRAIT"));
+                        cacheImage(image.optJSONObject("PH_LANDSCAPE"));
+                    } else {
+                        fetchImageFromCache(image.optJSONObject("PH_PORTRAIT"));
+                        fetchImageFromCache(image.optJSONObject("PH_LANDSCAPE"));
+                    }
+                }
+            } else {
+                JSONArray array = json.optJSONArray(k);
+                if (array == null) {
+                    // Not an array
+                    processResponse(json.optJSONObject(k), cache);
+                } else {
+                    processResponse(array, cache);
+                }
+            }
+        }
+        
+    }
 	
 	/////////////////////////////////////////////////////////////////////
 	/////////////////// Broadcast Routing Methods ///////////////////////

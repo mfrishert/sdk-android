@@ -3,7 +3,9 @@ package com.playhaven.sampleapp.examples;
 import org.json.JSONObject;
 
 import android.os.Bundle;
-import android.os.SystemClock;
+import android.view.View;
+import android.view.View.OnClickListener;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 
@@ -30,6 +32,8 @@ public class PublisherContentView extends ExampleView implements PHPublisherCont
 	private EditText placementTxt;
 	
 	private PurchaseHelper mPurchaseHelper;
+	
+	private boolean preloaded = false;
 
 	
 	@Override
@@ -55,14 +59,47 @@ public class PublisherContentView extends ExampleView implements PHPublisherCont
 	@Override
 	protected void addTopbarItems(LinearLayout topbar) {
 		
+	    LinearLayout layout = new LinearLayout(this);
+	    layout.setOrientation(LinearLayout.HORIZONTAL);
+	    
 		placementTxt = new EditText(this);
-		placementTxt.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, .9f)); // smaller weight means bigger?
+		placementTxt.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT, .9f)); // smaller weight means bigger?
 		placementTxt.setHint(R.string.default_placement);
 		placementTxt.setContentDescription("placementTxt");
 		
-		topbar.addView(placementTxt);
+		layout.addView(placementTxt);
+		layout.addView(createPreloadButton());
+		
+		topbar.addView(layout);
 		
 		super.addTopbarItems(topbar); // will add start button on the right
+	}
+	
+	private Button createPreloadButton() {
+        Button sendBtn = new Button(this);
+        
+        sendBtn.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT, .3f)); 
+        
+        sendBtn.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                preloadRequest();
+            }
+        });
+        
+        sendBtn.setText(R.string.preload_button_text);
+        sendBtn.setContentDescription("preloadBtn");
+        
+        return sendBtn;
+    }
+	
+	public void preloadRequest() {
+	    request = new PHPublisherContentRequest(this, placementTxt.getText().toString());
+        request.setOnPurchaseListener(this);
+        
+        request.preload();
+        
+        preloaded = true;
 	}
 	
 	@Override
@@ -77,12 +114,15 @@ public class PublisherContentView extends ExampleView implements PHPublisherCont
 		super.addMessage("Notification View: ", notifyView);
 		
 
-		// pass ourselves as the delegate AND the context
-		request = new PHPublisherContentRequest(this, placementTxt.getText().toString());
-		request.setOnPurchaseListener(this);
+		if (!preloaded) {
+		    // pass ourselves as the delegate AND the context
+		    request = new PHPublisherContentRequest(this, placementTxt.getText().toString());
+		    request.setOnPurchaseListener(this);
+		}
 		
-		request.preload();
 		request.send();
+		
+		preloaded = false;
 	}
 	
 	@Override

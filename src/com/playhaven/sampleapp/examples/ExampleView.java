@@ -4,10 +4,8 @@ import java.util.ArrayList;
 
 import android.app.ListActivity;
 import android.os.Bundle;
-import android.view.Gravity;
 import android.view.View;
 import android.view.View.OnClickListener;
-import android.view.ViewGroup.LayoutParams;
 import android.widget.Button;
 import android.widget.LinearLayout;
 
@@ -82,7 +80,7 @@ public class ExampleView extends ListActivity {
 	
 	private void setupTopbar() {
 		topbarLayout = new LinearLayout(this);
-		topbarLayout.setOrientation(LinearLayout.HORIZONTAL);
+		topbarLayout.setOrientation(LinearLayout.VERTICAL);
 		
 		addTopbarItems(topbarLayout);
 	}
@@ -95,7 +93,7 @@ public class ExampleView extends ListActivity {
 	private Button createSendButton() {
 		Button sendBtn = new Button(this);
 		
-		sendBtn.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, .3f)); 
+		sendBtn.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.FILL_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT, .3f)); 
 		
 		sendBtn.setOnClickListener(new OnClickListener() {
 			@Override

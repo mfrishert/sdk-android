@@ -2,6 +2,7 @@ package com.playhaven.src.publishersdk.open;
 
 
 import java.io.File;
+import java.io.IOException;
 import java.util.Hashtable;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
@@ -114,11 +115,18 @@ public class PHPublisherOpenRequest extends PHAPIRequest implements PHPrefetchTa
 				}
 			}
 			
-			
 			// start fetching the pre-cached elements
 			if (startPrecachingImmediately)
 				startNextPrefetch();
 		}
+		
+        if (prefetchTasks.size() == 0) {
+            try {
+                DiskLruCache.getSharedDiskCache().close();
+            } catch (IOException e) {
+                PHCrashReport.reportCrash(e, "PHPublisherOpenRequest - handleRequestSuccess", PHCrashReport.Urgency.high);
+            }
+        }
 		
 		session.startAndReset();
 		

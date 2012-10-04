@@ -31,7 +31,7 @@ public class PHNotificationView extends View implements PHAPIRequest.Delegate {
 	
 	private JSONObject notificationData;
 	
-	private PHPublisherMetadataRequest request;
+	public PHPublisherMetadataRequest request;
 	
 	private String placement;
 	
@@ -72,7 +72,8 @@ public class PHNotificationView extends View implements PHAPIRequest.Delegate {
 	
 	public void clear() {
 		this.request = null;
-		updateNotificationData(null);
+		// TODO: actually clear the renderer
+		this.notificationData = null;
 	}
 
 	/** Should call this method to update the view, renderer, etc when notification data changes. */
