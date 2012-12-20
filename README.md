@@ -27,6 +27,7 @@ Table of Contents
     * [PHPublisherContentRequest delegates](#phpublishercontentrequest-delegates)
 * [Tips n' Tricks](#tips-and-tricks)
     * [didDismissContentWithin](#diddismisscontentwithintimerange)
+* [Integration Test Console](#integration-test-console-overview)
 
 
 Installation
@@ -409,3 +410,26 @@ public void onResume() {
 }
 ```
 
+-----------------------------------
+##Integration Test Console Overview
+
+PlayHaven provides an [Integration Test Console](http://console.playhaven.com). It's located at http://console.playhaven.com 
+ 
+At the Testing Console, developers can enter their Android device ID. The Testing Console listens for events coming from the test device and displays a log of output, including successes, failures, and helpful information. The test device must be registered as test device from the PlayHaven Dashboard and "enabled" via the Publisher Dashboard. 
+ 
+Currently one cannot "export" their console log but you can copy and paste it into a text file or spreadsheet. To search, please use Command+F.
+ 
+To begin, enter your Android device ID and follow the "Testing Instructions" in the light blue box to view events and comments.
+ 
+The following can currently be checked:
+ 
+* Upon Open Request:
+  * Device ID (Android device ID) 
+  * Open requests sent
+  * Token/secret present
+  * SDK Version
+* Placements:
+  * Placement detection (Content request)
+  * Pre-loading (Pre-loading request)
+* IAP:
+  * Check that pricing is present (IAP transaction request)
